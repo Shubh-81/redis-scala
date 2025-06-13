@@ -17,14 +17,12 @@ object Server {
             val clientSocket = serverSocket.accept()
 
             val thread = new Thread(() => {         
-                Using(clientSocket.getInputStream()) { is =>
-                    Using(clientSocket.getOutputStream()) { os =>
-                        val reader = new BufferedReader(new InputStreamReader(is))
-
-                        reader.lines().forEach { line =>
-                            if (line.startsWith("PING")) {
-                                os.write("+PONG\r\n".getBytes())
-                            }
+                Using.resources(clientSocket.getInputStream(), clientSocket.getOutputStream()) { (is, os) =>
+                    val reader = new BufferedReader(new InputStreamReader(is));
+                    
+                    reader.lines().forEach { line =>
+                        if (line.startsWith("PING")) {
+                            os.write("+PONG\r\n".getBytes())
                         }
                     }
                 }
