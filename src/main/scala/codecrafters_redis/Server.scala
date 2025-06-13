@@ -2,6 +2,7 @@ package codecrafters_redis
 
 import java.net._;
 import java.io._;
+import scala.util.Using
 
 object Server {
   def main(args: Array[String]): Unit = {
@@ -12,21 +13,17 @@ object Server {
     //
     val serverSocket = new ServerSocket()
     serverSocket.bind(new InetSocketAddress("localhost", 6379))
+    val clientSocket = serverSocket.accept();
 
-    while (true) {
-      val clientSocket = serverSocket.accept();
-      println("Client socket connected.");
-
-      try {
-         val out = new DataOutputStream(clientSocket.getOutputStream());
-
-         out.write("+PONG\r\n".getBytes());
-         out.flush();
-      } catch {
-        case e: Exception => println("Error " + e.getMessage());
-      } finally {
-        clientSocket.close();
+    Using(clientSocket.getInputStream()) { is =>
+      Using (clientSocket.getOutputStream()) { os =>
+        var reader = new BufferedReader(new InputStreamReader(is))
+        reader.lines().forEach { line => 
+          if (line.startsWith("PING")) {
+            os.write("+PONG\r\n".getBytes())
+          }
+        }
       }
-    }   
+    } 
   }
 }
