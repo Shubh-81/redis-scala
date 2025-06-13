@@ -1,2 +1,6 @@
 debug/
 target/
+.metals
+.vscode
+.bloop
+project/
