@@ -69,7 +69,15 @@ object Server {
                 event.outputStream.write("$-1\r\n".getBytes())
             }
         } else if (event.message(0).toUpperCase() == "CONFIG" && event.message(1).toUpperCase() == "GET") {
-            event.outputStream.write(("*2\r\n$" + config.dir.length + "\r\n" + config.dir + "\r\n$" + config.dbFileName.length + "\r\n" + config.dbFileName + "\r\n").getBytes())
+            if (event.message.length != 3) {
+                throw new Exception("Invalid arguments")
+            }
+
+            if (event.message(2) == "dir") {
+                event.outputStream.write(("*2\r\n$3\r\ndir\r\n$" + config.dir.length + "\r\n" + config.dir + "\r\n").getBytes())
+            } else if (event.message(2) == "dbfilename") {
+                event.outputStream.write(("*2\r\n$10\r\ndbfilename\r\n$" + config.dbFileName.length + "\r\n" + config.dbFileName + "\r\n").getBytes())
+            }
         }
 
         event.outputStream.flush()
