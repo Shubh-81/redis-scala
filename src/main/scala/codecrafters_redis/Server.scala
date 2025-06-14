@@ -7,16 +7,43 @@ import scala.collection.mutable.ListBuffer
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.LinkedBlockingQueue
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.concurrent.Map
+import java.util.concurrent.ConcurrentHashMap
 
-case class Event(outputStream: OutputStream, message: String)
+case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
 
 object Server {
+    
+    final val cache = new ConcurrentHashMap[String, String]()
 
     private def processEvent(event: Event): Unit = {
-        if (event.message.toUpperCase().startsWith("PING")) {
+        if (event.message(0).toUpperCase() == "PING") {
             event.outputStream.write("+PONG\r\n".getBytes())
-        } else if (event.message.toUpperCase().startsWith("ECHO")) {
-            event.outputStream.write(s"+${event.message.substring(4).trim()}\r\n".getBytes())
+
+        } else if (event.message(0).toUpperCase() == "ECHO") {
+            if (event.message.length < 2) {
+
+            }
+            event.outputStream.write(s"+${event.message(1)}\r\n".getBytes())
+
+        } else if (event.message(0).toUpperCase() == "SET") {
+            if (event.message.length < 3) {
+                throw new Exception("Invalid arguments")
+            }
+
+            cache.put(event.message(1), event.message(2))
+            event.outputStream.write("+OK\r\n".getBytes())
+        } else if (event.message(0).toUpperCase() == "GET") {
+            if (event.message.length < 2) {
+                throw new Exception("Invalid arguments")
+            }
+
+            if (cache.containsKey(event.message(1))) {
+                val value = cache.get(event.message(1))
+                event.outputStream.write(s"+${value}\r\n".getBytes())
+            } else {
+                event.outputStream.write("$-1\r\n".getBytes())
+            }
         }
 
         event.outputStream.flush()
@@ -76,7 +103,7 @@ object Server {
                                 idx += 1
 
                                 if (idx == 2 * len) {
-                                    q.offer(new Event(os, command.mkString(" ")))
+                                    q.offer(new Event(os, command))
                                 }
                             }
                         }
