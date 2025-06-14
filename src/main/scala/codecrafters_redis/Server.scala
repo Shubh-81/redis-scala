@@ -7,18 +7,21 @@ import scala.collection.mutable.ListBuffer
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.LinkedBlockingQueue
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.concurrent.Map
 import java.util.concurrent.ConcurrentHashMap
 import java.time.LocalDateTime
 import java.time.Duration
+import scala.collection.immutable.Map
 
 case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
 
 case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
 
+case class Config(dir: String, dbFileName: String)
+
 object Server {
     
     final val cache = new ConcurrentHashMap[String, CacheElement]()
+    final var config = new Config("", "")
 
     private def processEvent(event: Event): Unit = {
         if (event.message(0).toUpperCase() == "PING") {
@@ -65,6 +68,8 @@ object Server {
             } else {
                 event.outputStream.write("$-1\r\n".getBytes())
             }
+        } else if (event.message(0).toUpperCase() == "CONFIG" && event.message(1).toUpperCase() == "GET") {
+            event.outputStream.write(("*2\r\n$" + config.dir.length + "\r\n" + config.dir + "\r\n$" + config.dbFileName.length + "\r\n" + config.dbFileName + "\r\n").getBytes())
         }
 
         event.outputStream.flush()
@@ -88,6 +93,9 @@ object Server {
     def main(args: Array[String]): Unit = {
         val serverSocket = new ServerSocket();
         serverSocket.bind(new InetSocketAddress("localhost", 6379))
+
+        var argMap = parseArguments(args)
+        config = new Config(argMap.get("dir").getOrElse("/temp/redis-files"), argMap.get("dbfilename").getOrElse("dump.rdb"))
 
         var threads = ListBuffer[Thread]()
 
@@ -136,5 +144,12 @@ object Server {
         }
         
         threads.foreach(_.join()) 
+    }
+
+    private def parseArguments(args: Array[String]): Map[String, String] = {
+        args.sliding(2, 2).collect {
+            case Array(flag, value) if flag.startsWith("--") => 
+                flag.drop(2) -> value
+        }.toMap
     }
 }
