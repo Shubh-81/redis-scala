@@ -9,12 +9,16 @@ import java.util.concurrent.LinkedBlockingQueue
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.concurrent.Map
 import java.util.concurrent.ConcurrentHashMap
+import java.time.LocalDateTime
+import java.time.Duration
 
 case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
 
+case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
+
 object Server {
     
-    final val cache = new ConcurrentHashMap[String, String]()
+    final val cache = new ConcurrentHashMap[String, CacheElement]()
 
     private def processEvent(event: Event): Unit = {
         if (event.message(0).toUpperCase() == "PING") {
@@ -31,7 +35,12 @@ object Server {
                 throw new Exception("Invalid arguments")
             }
 
-            cache.put(event.message(1), event.message(2))
+            var exp: Option[Long] = None
+            if (event.message.length >= 5 && event.message(3).toUpperCase() == "PX") {
+                exp = Some(event.message(4).toLong)
+            }
+
+            cache.put(event.message(1), new CacheElement(event.message(2), exp, LocalDateTime.now()))
             event.outputStream.write("+OK\r\n".getBytes())
         } else if (event.message(0).toUpperCase() == "GET") {
             if (event.message.length < 2) {
@@ -40,7 +49,19 @@ object Server {
 
             if (cache.containsKey(event.message(1))) {
                 val value = cache.get(event.message(1))
-                event.outputStream.write(s"+${value}\r\n".getBytes())
+                
+                value.expiry match {
+                    case Some(exp) => {
+                        val duration = Duration.between(value.setAt, LocalDateTime.now()).toMillis.toLong
+                        if (duration <= exp) {
+                            event.outputStream.write(s"+${value.value}\r\n".getBytes())
+                        } else {
+                            cache.remove(event.message(1))
+                            event.outputStream.write("$-1\r\n".getBytes())
+                        }
+                    }
+                    case None => event.outputStream.write(s"+${value.value}\r\n".getBytes())
+                }
             } else {
                 event.outputStream.write("$-1\r\n".getBytes())
             }
