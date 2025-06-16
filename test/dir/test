@@ -1,0 +1,19 @@
+52 45 44 49 53 30 30 31 31  // Magic string + version number (ASCII): "REDIS0011".
+FA                             // Indicates the start of a metadata subsection.
+09 72 65 64 69 73 2D 76 65 72  // The name of the metadata attribute (string encoded): "redis-ver".
+06 36 2E 30 2E 31 36           // The value of the metadata attribute (string encoded): "6.0.16".
+FE                       // Indicates the start of a database subsection.
+00                       /* The index of the database (size encoded). Here, the index is 0. */
+FB                       // Indicates that hash table size information follows.
+03 // Size of hash table
+00  // Size of hash table storing expiry
+00                       // Value type is string.
+03 73 68 75
+02 62 68
+00                       // Value type is string.
+04 66 6F 6F 33
+03 62 61 72
+00                       // Value type is string.
+03 66 6F 6F
+03 62 61 72
+FF                      // Indicates file is ending and checksum follows
