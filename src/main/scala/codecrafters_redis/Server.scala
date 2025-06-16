@@ -204,6 +204,27 @@ object Server {
         }
     }
 
+    def globToRegex(glob: String): String = {
+        val escaped = glob
+            .replace("\\", "\\\\")    // Escape backslashes first
+            .replace(".", "\\.")      // Escape dots
+            .replace("^", "\\^")      // Escape carets
+            .replace("$", "\\$")      // Escape dollars
+            .replace("+", "\\+")      // Escape plus
+            .replace("(", "\\(")      // Escape parentheses
+            .replace(")", "\\)")
+            .replace("[", "\\[")      // Escape brackets
+            .replace("]", "\\]")
+            .replace("{", "\\{")      // Escape braces
+            .replace("}", "\\}")
+            .replace("|", "\\|")      // Escape pipes
+            .replace("*", ".*")       // Convert glob * to regex .*
+            .replace("?", ".")        // Convert glob ? to regex .
+        
+        s"^${escaped}$$"
+    }
+
+
     private def processEvent(event: Event): Unit = {
         println(s"Proccessing event: ${event}")
         if (event.message(0).toUpperCase() == "PING") {
@@ -266,7 +287,7 @@ object Server {
             if (event.message.length != 2) {
                 throw new Exception("Invalid arguments, required: KEYS <PATTERN>")
             }
-            val pattern: Regex = event.message(1).r
+            val pattern: Regex = globToRegex(event.message(1)).r
             println(s"pattern: ${pattern}")
             
             val filteredKeys = cache.keySet().asScala.filter { key =>
