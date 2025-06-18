@@ -202,7 +202,7 @@ object Server {
                 val (value, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex2
 
-                print(s"${key} ${value}")
+                println(s"${key} ${value}")
                 cache.put(key, new CacheElement(value, None, LocalDateTime.now()))
             } else {
                 idx += 1
