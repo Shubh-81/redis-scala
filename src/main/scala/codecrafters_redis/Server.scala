@@ -205,7 +205,7 @@ object Server {
                 println(s"${key} ${value}")
                 cache.put(key, new CacheElement(value, None, LocalDateTime.now()))
             } else {
-                idx += 1
+                idx = bytes.length + 1
             }
         }
     }
