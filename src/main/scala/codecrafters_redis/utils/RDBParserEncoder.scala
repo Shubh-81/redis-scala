@@ -110,6 +110,7 @@ class RDBParserEncoder {
             Array(b0, b1, b2, b3, b4)
         } else {
             println("Size exceeds limit of 32 bits")
+            return Array()
         }
     }
 
