@@ -42,7 +42,7 @@ class RDBParserEncoder {
         while (idx < stringLen) {
             if ((newIndex + idx) >= input.length) {
                 println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-                throw new Exception("Unexpected EOF")
+                throw new Exception("Unexpected EOF: string")
             }
             res += input(newIndex + idx).toChar
             idx += 1
@@ -123,7 +123,7 @@ class RDBParserEncoder {
     def expiry_decoder(input: Array[Byte], index: Int): (Long, LocalDateTime, Int) = {
         if ((index + 8) > input.length) {
             println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-            throw new Exception("Unexpected EOF")
+            throw new Exception("Unexpected EOF: Expiry")
         }
 
         var millis = 0L

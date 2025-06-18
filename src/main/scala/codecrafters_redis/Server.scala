@@ -188,7 +188,7 @@ object Server {
                 val (value, newIndex3) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex3
 
-                print(s"${key} ${value}")
+                println(s"${key} ${value}")
 
                 cache.put(key, new CacheElement(value, Some(expiry), setAt))
             }
