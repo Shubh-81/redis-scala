@@ -4,6 +4,7 @@ import java.time.ZoneOffset
 import java.time.LocalDateTime
 import java.time.Instant
 import java.time.Duration
+import scala.collection.mutable.ArrayBuffer
 
 sealed trait EncodingType 
 object EncodingType {
@@ -11,205 +12,133 @@ object EncodingType {
     case object SIZE_ENCODING extends EncodingType
 }
 
-case class ExpiryInfo(expiry: Long, setAt: LocalDateTime)
+case class ExpiryInfo(expiry: Long, setAt: LocalDateTime)   
 
 class RDBParserEncoder {
 
-    private def string_encoder(input: String): String = {
+    def string_encoder(input: String, size_encoding: Boolean = true): Array[Byte] = {
         val len = input.length()
-        var res = size_encoder(len) + " "
+        var res: ArrayBuffer[Byte] = ArrayBuffer[Byte]()
 
+        if (size_encoding) {
+            res ++= size_encoder(len)
+        }
         for (ch <- input) {
-            res += numToHexa(ch.toLong).reverse
-            res += " "
+            res += ch.toByte
         }
 
-        return res.trim
+        return res.toArray
     }
 
-    def string_decoder(input: String): String = {
-        val len = input.length()
+    def string_decoder(input: Array[Byte], index: Int): (String, Int) = {
+        if (index >= input.length) {
+            println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
+            throw new Exception("End of file unexpectedly");
+        }
+
+        val (stringLen, newIndex) = size_decoder(input, index)
         var idx = 0
-        
-        val bytes = input.split(" ")
-        if (bytes.length == 0) {
-            throw new Exception("Invalid string to decode")
-        }
-
-        val stringLen = size_decoder(bytes(0))
-        if (stringLen != (bytes.length - 1)) {
-            throw new Exception("String size does not match specified size")
-        }
-
         var res = ""
-        for (byte <- bytes) {
-            if (byte.length != 2) {
-                throw new Exception("Invalid format")
+        while (idx < stringLen) {
+            if ((newIndex + idx) >= input.length) {
+                println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
+                throw new Exception("Unexpected EOF")
             }
-            res += hexaToNum(byte.reverse).toChar
+            res += input(newIndex + idx).toChar
+            idx += 1
         }
 
-        return res.trim
+        (res, newIndex + idx)
     }
 
-    def size_decoder(input: String): Long = {
-        var bits = ""
-        val len = input.length
-
-        var idx = len - 1
-        while (idx >= 0) {
-            if (input(idx) != ' ') {
-                var num = if (input(idx) <= '9' && input(idx) >= '0') input(idx) - '0' else (input(idx) - 'A' + 10)
-                var curr = ""
-                while (num > 0) {
-                    curr += ('0' + num % 2).toChar
-                    num /= 2
-                }
-
-                while (curr.length < 4) curr += '0'
-
-                bits += curr
-            }
-            idx -= 1
+    def size_decoder(input: Array[Byte], index: Int): (Long, Int) = {
+        if (index >= input.length) {
+            println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
+            throw new Exception("End of file unexpectedly");
         }
 
-        val bitLen = bits.length()
-        var res = 0
-
-        // In case of starting bits to be 00 take the next six bits as the size
-        if (bitLen == 8 && bits(bitLen - 1) == '0' && bits(bitLen - 2) == '0') {
-            var idx = 0
-
-            while (idx < math.min(6, bitLen)) {
-                res += (1 << idx) * (bits(idx) - '0')
-                idx += 1
+        if ((input(index).toLong & 0xC0) == 0x00) {
+            (input(index).toLong, index + 1)
+        } else if ((input(index).toLong & 0xC0) == 0x40) {
+            if (index == input.length - 1) {
+                println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
+                throw new Exception("Unexpected end of file")
             }
-        }
-        else if (bitLen == 16 && bits(bitLen - 1) == '0' && bits(bitLen - 2) == '1') {
-            var idx = 0
+            var res = (input(index).toLong & 0x3F).toLong << 8
+            res += (input(index + 1).toLong & 0xFF).toLong
 
-            while (idx < 14) {
-                res += (1 << idx) * (bits(idx) - '0')
-                idx += 1
+            (res, index + 2)
+        } else if ((input(index).toLong & 0xC0) == 0x80) {
+            if ((index + 5) > input.length) {
+                println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
+                throw new Exception("Unexpected end of file")
             }
-        }
-        else if (bitLen == 40 && bits(bitLen - 1) == '1' && bits(bitLen - 2) == '0') {
-            var idx = 0
+            var res = (input(index + 1).toLong & 0xFF).toLong << 24
+            res += (input(index + 2).toLong & 0xFF).toLong << 16
+            res += (input(index + 3).toLong & 0xFF).toLong << 8
+            res += (input(index + 4).toLong & 0xFF).toLong
 
-            while (idx < 32) {
-                res += (1 << idx) * (bits(idx) - '0')
-                idx += 1
-            }
+            (res, index + 5)
         } else {
-            throw new Exception("Invalid size encoding")
-        }
-
-        return res
-    }
-
-    def size_encoder(input: Long): String = {
-        try {
-            var num = input
-            var bits = "";
-
-            while (num > 0) {
-                bits += ('0' + num % 2).toChar
-                num /= 2
-            }
-
-            if (bits.length <= 6) {
-                while (bits.length < 8) bits += '0'
-            } else if (bits.length <= 14) {
-                while (bits.length < 14)    bits += '0'
-                bits += "01"
-            } else if (bits.length <= 32) {
-                while (bits.length < 32)    bits += '0'
-                bits += "10000000"
-            } else {
-                throw new Exception("Excceded size limit")
-            }
-
-            var res = ""
-            var i = 0
-            while (i < bits.length) {
-                if (i % 8 == 0) res += " "
-                val curr = 1 * (bits(i) - '0') + 2 * (bits(i + 1) - '0') + 4 * (bits(i + 2) - '0') + 8 * (bits(i + 3) - '0')
-                if (curr < 10)  res += ('0' + curr).toChar
-                else    res += ('A' + (curr - 10)).toChar
-
-                i += 4
-            }
-            res = res.trim.reverse
-            return res
-        } catch {
-            case e: Exception => println(s"Error while size encoding: ${e.getMessage()}")
-            return ""
+            println(input.slice(index, input.length).map("%02x".format(_)).mkString(s" ${index} \n"))
+            (0, index + 1)
         }
     }
 
-    // Convert a number to hexa decimal in little edian format
-    def numToHexa(input: Long): String = {
-        var num = input
-        var res = ""
-
-        var space_pos = 2
-        while (num > 0) {
-            if (res.length == space_pos) {
-                res += " "
-                space_pos += 3
-            }
-
-            var d = num % 16
-            num /= 16
-
-            if (d < 10) res += ('0' + d).toChar
-            else    res += ('A' + (d - 10)).toChar
-        }   
-
-        if (res.length % 2 != 0)    res += "0"
-        return res.trim
-    }
-
-    // Convert a hexa decimal string (little edian) to number
-    def hexaToNum(input: String): Long = {
-        var res: Long = 0
-        var p = 0
-
-        for (ch <- input) {
-            if (ch != ' ') {
-                val num = if (ch <= '9' && ch >= '0') ch - '0' else ch - 'A' + 10
-                res = res + (math.pow(16, p) * (num)).toLong
-                p += 1
-            }
+    def size_encoder(input: Long): Array[Byte] = {
+        if (input < 0) {
+            throw new Exception("Size cannot be less than zero")
         }
 
-        return res
+        if (input < (1 << 6)) {
+            Array((input & 0x3F).toByte)
+        } else if (input < (1 << 14)) {
+            val b0 = ((input >> 8) & 0x3F | 0x40).toByte
+            val b1 = (input & 0xFF).toByte
+            Array(b0, b1)
+        } else if (input < (1 << 32)) {
+            val b0 = 0x80.toByte
+            val b1 = ((input >> 24) & 0xFF).toByte
+            val b2 = ((input >> 16) & 0xFF).toByte
+            val b3 = ((input >> 8) & 0xFF).toByte
+            val b4 = (input & 0xFF).toByte
+            Array(b0, b1, b2, b3, b4)
+        } else {
+            throw new Exception("Size exceeds limit of 32 bits")
+        }
     }
 
-    def expiry_encoder(expiry: Long, setAt: LocalDateTime): String = {
+    def expiry_encoder(expiry: Long, setAt: LocalDateTime): Array[Byte] = {
         val millis: Long = setAt.toInstant(ZoneOffset.ofHoursMinutes(5, 30)).toEpochMilli + expiry
-        return numToHexa(millis)
+        var bytes: ArrayBuffer[Byte] = ArrayBuffer[Byte]()
+
+        var i = 0
+        while (i < 8) {
+            bytes += ((millis >> (i * 8)) & 0xFF).toByte
+            i += 1
+        }
+        return bytes.toArray
     }
 
-    def expiry_decoder(input: String): ExpiryInfo = {
-        val num = hexaToNum(input)
-        val expiryTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(num), ZoneOffset.ofHoursMinutes(5, 30))
+    def expiry_decoder(input: Array[Byte], index: Int): (Long, LocalDateTime, Int) = {
+        if ((index + 8) > input.length) {
+            println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
+            throw new Exception("Unexpected EOF")
+        }
+
+        var millis = 0L
+        var i = 0
+        while (i < 8) {
+            millis += ((input(index + i).toLong & 0xFF).toLong << (i * 8)).toLong
+            i += 1
+        }
+
+        val expiryTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneOffset.ofHoursMinutes(5, 30))
         val expiry = Duration.between(LocalDateTime.now(), expiryTime).toMillis()
-        return ExpiryInfo(expiry, LocalDateTime.now())
+        return (expiry, LocalDateTime.now(), index + i)
     }
 
     def encode(input: String, encodingType: EncodingType): String = {
-        if (encodingType == EncodingType.STRING_ENCODING) {
-            return string_encoder(input)
-        } else if (encodingType == EncodingType.SIZE_ENCODING) {
-            try {
-                return size_encoder(input.toLong)
-            } catch {
-                case e: Exception => println(s"Error: ${e.getMessage()}")
-                return ""
-            } 
-        }
-
         return ""
     }
 }

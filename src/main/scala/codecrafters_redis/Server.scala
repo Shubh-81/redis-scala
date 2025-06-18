@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit
 import scala.util.matching.Regex
 import java.util.regex.Pattern
 import scala.jdk.CollectionConverters._
+import java.nio.file.Files
+import java.nio.file.Paths
 
 case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
 
@@ -87,43 +89,37 @@ object Server {
         }
 
         val rdbParser = new RDBParserEncoder()
+        val outputStream = new FileOutputStream(file)
 
-        Using(new FileWriter(file)) { writer => 
+        outputStream.write(rdbParser.string_encoder("REDIS0011", false))
 
-            // Header
-            writer.write("52 45 44 49 53 30 30 31 31  // Magic string + version number (ASCII): \"REDIS0011\".\n")
+        outputStream.write(0xFA.toByte)
+        outputStream.write(rdbParser.string_encoder("redis-ver"))
+        outputStream.write(rdbParser.string_encoder("6.0.16"))
 
-            // Metadata
-            writer.write("FA                             // Indicates the start of a metadata subsection.\n")
-            writer.write(s"${rdbParser.encode("redis-ver", EncodingType.STRING_ENCODING)}  // The name of the metadata attribute (string encoded): \"redis-ver\".\n")
-            writer.write(s"${rdbParser.encode("6.0.16", EncodingType.STRING_ENCODING)}           // The value of the metadata attribute (string encoded): \"6.0.16\".\n")
+        outputStream.write(0xFE.toByte)
+        outputStream.write(0x00.toByte)
 
-            // Database Details
-            writer.write("FE                       // Indicates the start of a database subsection.\n")
-            writer.write("00                       /* The index of the database (size encoded). Here, the index is 0. */\n")
+        outputStream.write(0xFB.toByte)
+        outputStream.write(rdbParser.size_encoder(totalCount))
+        outputStream.write(rdbParser.size_encoder(expiryCount))
 
-            // Hash Table Info
-            writer.write("FB                       // Indicates that hash table size information follows.\n")
-            writer.write(s"${rdbParser.size_encoder(totalCount)} // Size of hash table\n")
-            writer.write(s"${rdbParser.size_encoder(expiryCount)}  // Size of hash table storing expiry\n")
-
-            // Storing elemnts
-            snapshot.forEach { (key, value) => 
-                value.expiry match {
-                    case Some(exp) => {
-                        writer.write("FC           // Indicates key has an expiry in milliseconds\n")
-                        writer.write(s"${rdbParser.expiry_encoder(exp, value.setAt)} // Expiry timestamp in unix time\n")
-                    }
-                    case None => ()
+        snapshot.forEach { (key, value) =>
+            value.expiry match {
+                case Some(exp) => {
+                    outputStream.write(0xFC.toByte)
+                    outputStream.write(rdbParser.expiry_encoder(exp, value.setAt))
                 }
-                writer.write("00                       // Value type is string.\n")
-                writer.write(s"${rdbParser.encode(key, EncodingType.STRING_ENCODING)}\n")
-                writer.write(s"${rdbParser.encode(value.value, EncodingType.STRING_ENCODING)}\n")
+                case None => ()
             }
 
-            // End of file
-            writer.write("FF                      // Indicates file is ending and checksum follows\n")
+            outputStream.write(0x00.toByte)
+            outputStream.write(rdbParser.string_encoder(key))
+            outputStream.write(rdbParser.string_encoder(value.value))
         }
+
+        outputStream.write(0xFF.toByte)
+        outputStream.close()
     }
 
     private def loadSavedState(): Unit = {
@@ -132,7 +128,6 @@ object Server {
             println(s"${config.dir} does not exists")
             return
         }
-
         val file = new File(dir, config.dbFileName)
         if (!file.exists()) {
             println(s"${config.dbFileName} does not exists")
@@ -141,65 +136,76 @@ object Server {
 
         val rdbDecoder = new RDBParserEncoder()
 
-        Using(Source.fromFile(file)) { source =>
-            val lines = source.getLines().toArray
-            var i = 1
+        println(s"Reading file: ${file.getAbsolutePath()}")
+        println(s"File exists: ${file.exists()}")
+        println(s"File length: ${file.length()}")
+        
+        val bytes: Array[Byte] = Files.readAllBytes(Paths.get(config.dir, config.dbFileName))
+        val hexString = bytes.map("%02x".format(_)).mkString("\n")
+        var idx = 9
+        var totalCount = 0L
+        var expiryCount = 0L
 
-            var totalCount: Long = 0
-            var expiryCount: Long = 0
-            while (i < lines.length) {
-                val line = lines(i).replaceAll("""//.*|/\*[^*]*\*/""", "").trim
+        while (idx < bytes.length) {
+            if ((bytes(idx).toLong & 0xFF) == 0xFA) {
+                idx += 1
+                val (redisVersionKey, newIndex1) = rdbDecoder.string_decoder(bytes, idx)
+                idx = newIndex1
+                val (redisVersionValue, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
+                idx = newIndex2
+                println(redisVersionKey)
+                println(redisVersionValue)
+            }
+            else if ((bytes(idx).toLong & 0xFF) == 0xFE) {
+                idx += 2
+            }
+            else if ((bytes(idx).toLong & 0xFF) == 0xFB) {
+                idx += 1
 
-                if (line == "FA") {
-                    // Skip metdata information
-                    i += 3
-                } 
-                else if (line == "FE") {
-                    // Support for single db currently
-                    i += 2
-                } 
-                else if (line == "FB") {
-                    if (lines.length < (i + 3)) {
-                        throw new Exception("Invalid RDB file format")
-                    }
-                    totalCount = rdbDecoder.size_decoder(lines(i + 1).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                    expiryCount = rdbDecoder.size_decoder(lines(i + 2).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                    i += 3
-                }
-                else if (line == "FC" && totalCount > 0 && expiryCount > 0) {
-                    if (lines.length < (i + 5)) {
-                        throw new Exception("Invalid RDB format")
-                    }
-                    totalCount -= 1
-                    expiryCount -= 1
+                val (totalCountVal, newIndex1) = rdbDecoder.size_decoder(bytes, idx)
+                idx = newIndex1
+                totalCount = totalCountVal
 
-                    val expiryInfo = rdbDecoder.expiry_decoder(lines(i + 1).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                    if (expiryInfo.expiry > 0) {
-                        val key = rdbDecoder.string_decoder(lines(i + 2).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                        val value = rdbDecoder.string_decoder(lines(i + 3).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                        cache.put(key, new CacheElement(value, Some(expiryInfo.expiry), expiryInfo.setAt))
-                    }
+                val (expiryCountVal, newIndex2) = rdbDecoder.size_decoder(bytes, idx)
+                idx = newIndex2
+                expiryCount = expiryCountVal
 
-                    i += 5
-                }
-                else if (line == "00" && totalCount > 0) {
-                    if (lines.length < (i + 3)) {
-                        throw new Exception("Invalid RDB Format")
-                    }
-                    totalCount -= 1
+                println(totalCount)
+                println(expiryCount)
+            }
+            else if ((bytes(idx).toLong & 0xFF) == 0xFC && expiryCount > 0 && totalCount > 0) {
+                idx += 1
+                expiryCount -= 1
+                totalCount -= 1
 
-                    val key = rdbDecoder.string_decoder(lines(i + 1).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                    val value = rdbDecoder.string_decoder(lines(i + 2).replaceAll("""//.*|/\*[^*]*\*/""", "").trim)
-                    cache.put(key, new CacheElement(value, None, LocalDateTime.now()))
+                val (expiry, setAt, newIndex1) = rdbDecoder.expiry_decoder(bytes, idx)
+                idx = newIndex1
 
-                    i += 3
-                } 
-                else if (line == "FF") {
-                    return
-                }
-                else {
-                    throw new Exception(s"Invalid RDB Format, Unexpected line: ${line}")
-                }
+                idx += 1
+                val (key, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
+                idx = newIndex2
+
+                val (value, newIndex3) = rdbDecoder.string_decoder(bytes, idx)
+                idx = newIndex3
+
+                print(s"${key} ${value}")
+
+                cache.put(key, new CacheElement(value, Some(expiry), setAt))
+            }
+            else if ((bytes(idx).toLong & 0xFF) == 0x00 && totalCount > 0) {
+                idx += 1
+                totalCount -= 1
+
+                val (key, newIndex1) = rdbDecoder.string_decoder(bytes, idx)
+                idx = newIndex1
+
+                val (value, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
+                idx = newIndex2
+
+                print(s"${key} ${value}")
+                cache.put(key, new CacheElement(value, None, LocalDateTime.now()))
+            } else {
+                idx += 1
             }
         }
     }
@@ -223,7 +229,6 @@ object Server {
         
         s"^${escaped}$$"
     }
-
 
     private def processEvent(event: Event): Unit = {
         println(s"Proccessing event: ${event}")
