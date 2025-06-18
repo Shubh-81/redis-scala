@@ -33,7 +33,8 @@ class RDBParserEncoder {
     def string_decoder(input: Array[Byte], index: Int): (String, Int) = {
         if (index >= input.length) {
             println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-            throw new Exception("End of file unexpectedly");
+            println("End of file unexpectedly");
+            return ("", index + 1)
         }
 
         val (stringLen, newIndex) = size_decoder(input, index)
@@ -42,7 +43,8 @@ class RDBParserEncoder {
         while (idx < stringLen) {
             if ((newIndex + idx) >= input.length) {
                 println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-                throw new Exception("Unexpected EOF: string")
+                println("Unexpected EOF: string")
+                return ("", index + 1)
             }
             res += input(newIndex + idx).toChar
             idx += 1
@@ -54,7 +56,8 @@ class RDBParserEncoder {
     def size_decoder(input: Array[Byte], index: Int): (Long, Int) = {
         if (index >= input.length) {
             println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-            throw new Exception("End of file unexpectedly");
+            println("End of file unexpectedly");
+            return (0, index + 1)
         }
 
         if ((input(index).toLong & 0xC0) == 0x00) {
@@ -62,7 +65,8 @@ class RDBParserEncoder {
         } else if ((input(index).toLong & 0xC0) == 0x40) {
             if (index == input.length - 1) {
                 println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-                throw new Exception("Unexpected end of file")
+                println("Unexpected end of file")
+                return (0, index + 1)
             }
             var res = (input(index).toLong & 0x3F).toLong << 8
             res += (input(index + 1).toLong & 0xFF).toLong
@@ -71,7 +75,8 @@ class RDBParserEncoder {
         } else if ((input(index).toLong & 0xC0) == 0x80) {
             if ((index + 5) > input.length) {
                 println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-                throw new Exception("Unexpected end of file")
+                println("Unexpected end of file")
+                return (0, index + 1)
             }
             var res = (input(index + 1).toLong & 0xFF).toLong << 24
             res += (input(index + 2).toLong & 0xFF).toLong << 16
@@ -87,7 +92,7 @@ class RDBParserEncoder {
 
     def size_encoder(input: Long): Array[Byte] = {
         if (input < 0) {
-            throw new Exception("Size cannot be less than zero")
+            println("Size cannot be less than zero")
         }
 
         if (input < (1 << 6)) {
@@ -104,7 +109,7 @@ class RDBParserEncoder {
             val b4 = (input & 0xFF).toByte
             Array(b0, b1, b2, b3, b4)
         } else {
-            throw new Exception("Size exceeds limit of 32 bits")
+            println("Size exceeds limit of 32 bits")
         }
     }
 
@@ -123,7 +128,8 @@ class RDBParserEncoder {
     def expiry_decoder(input: Array[Byte], index: Int): (Long, LocalDateTime, Int) = {
         if ((index + 8) > input.length) {
             println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-            throw new Exception("Unexpected EOF: Expiry")
+            println("Unexpected EOF: Expiry")
+            return (0, LocalDateTime.now(), index + 1)
         }
 
         var millis = 0L
