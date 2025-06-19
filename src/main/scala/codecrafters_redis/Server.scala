@@ -308,6 +308,8 @@ object Server {
             }
 
             event.outputStream.write(output.getBytes())
+        } else if (event.message(0).toUpperCase() == "INFO") {
+            event.outputStream.write("$11\r\nrole:master\r\n")
         }
 
         event.outputStream.flush()
