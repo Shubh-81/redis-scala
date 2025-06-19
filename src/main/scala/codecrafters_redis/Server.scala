@@ -334,7 +334,7 @@ object Server {
 
         var port = argMap.get("port").getOrElse("6379")
         val serverSocket = new ServerSocket();
-        serverSocket.bind(new InetSocketAddress("localhost", Int.parseInt(port)))
+        serverSocket.bind(new InetSocketAddress("localhost", port.toInt))
 
         try {
             loadSavedState()
