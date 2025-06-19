@@ -329,11 +329,12 @@ object Server {
     }
 
     def main(args: Array[String]): Unit = {
-        val serverSocket = new ServerSocket();
-        serverSocket.bind(new InetSocketAddress("localhost", 6379))
-
         var argMap = parseArguments(args)
         config = new Config(argMap.get("dir").getOrElse("/temp/redis-files/"), argMap.get("dbfilename").getOrElse("dump.rdb"))
+
+        var port = argMap.get("port").getOrElse("6379")
+        val serverSocket = new ServerSocket();
+        serverSocket.bind(new InetSocketAddress("localhost", Int.parseInt(port)))
 
         try {
             loadSavedState()
