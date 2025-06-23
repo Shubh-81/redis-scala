@@ -310,7 +310,7 @@ object Server {
 
             event.outputStream.write(output.getBytes())
         } else if (event.message(0).toUpperCase() == "INFO") {
-            event.outputStream.write(s"$$11\r\nrole:master\r\n".getBytes())
+            event.outputStream.write(s"$$11\r\nrole:${serverConfig.role}\r\n".getBytes())
         }
 
         event.outputStream.flush()
