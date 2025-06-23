@@ -340,7 +340,7 @@ object Server {
         serverSocket.bind(new InetSocketAddress("localhost", port.toInt))
 
         if (argMap.contains("replicaof")) {
-            serverConfig.role = "slave"
+            serverConfig = new ServerConfig("slave")
         }
 
         try {
