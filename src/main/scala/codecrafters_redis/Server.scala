@@ -23,8 +23,8 @@ import java.nio.file.Files
 import java.nio.file.Paths
 
 case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
-
 case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
+case class ServerConfig(role: String)
 
 case class Config(dir: String, dbFileName: String)
 
@@ -32,6 +32,7 @@ object Server {
     
     final val cache = new ConcurrentHashMap[String, CacheElement]()
     final var config = new Config("", "")
+    final var serverConfig = new ServerConfig("master")
 
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 
@@ -309,7 +310,7 @@ object Server {
 
             event.outputStream.write(output.getBytes())
         } else if (event.message(0).toUpperCase() == "INFO") {
-            event.outputStream.write("$11\r\nrole:master\r\n".getBytes())
+            event.outputStream.write(s"$$11\r\nrole:master\r\n".getBytes())
         }
 
         event.outputStream.flush()
@@ -337,6 +338,10 @@ object Server {
         var port = argMap.get("port").getOrElse("6379")
         val serverSocket = new ServerSocket();
         serverSocket.bind(new InetSocketAddress("localhost", port.toInt))
+
+        if (argMap.contains("replicaof")) {
+            serverConfig.role = "slave"
+        }
 
         try {
             loadSavedState()
