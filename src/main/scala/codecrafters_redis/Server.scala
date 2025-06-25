@@ -26,7 +26,6 @@ import scala.util.Random
 case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
 case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
 case class ServerConfig(role: String, master_replid: String, master_repl_offset: Long)
-
 case class Config(dir: String, dbFileName: String)
 
 object Server {
@@ -34,9 +33,7 @@ object Server {
     final val cache = new ConcurrentHashMap[String, CacheElement]()
     final var config = new Config("", "")
     final var serverConfig = new ServerConfig("master", Random.alphanumeric.take(40).mkString, 0)
-
     final val respEncoder = new RESPEncoder()
-
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 
     private def startScheduledSaveState(): Unit = {
@@ -305,6 +302,12 @@ object Server {
                 throw new Exception("Invalid arguments, required: REPLCONF ARG1 ARG2")
             }
             event.outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
+        } else if (event.message(0).toUpperCase == "PSYNC") {
+            if (event.message.length != 3) {
+                throw new Exception("Invalid arguments, required: PSYNC ? -1")
+            }
+
+            event.outputStream.write(respEncoder.encodeSimpleString(s"FULLRESYNC ${serverConfig.master_replid} 0").getBytes())
         }
 
         event.outputStream.flush()
