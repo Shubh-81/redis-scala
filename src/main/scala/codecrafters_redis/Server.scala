@@ -320,7 +320,7 @@ object Server {
         }
     }
 
-    private def handshake(masterHost: String, masterPort: String) {
+    private def handshake(masterHost: String, masterPort: String, slavePort: String) {
         val socket = new Socket(masterHost, masterPort.toInt)
         val out = new PrintStream(socket.getOutputStream(), true)
         val in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
@@ -328,7 +328,14 @@ object Server {
         out.print(respEncoder.encodeArray(Array("PING")))
         out.flush()
 
-        val response = in.readLine()
+        var response = in.readLine()
+
+        out.print(respEncoder.encodeArray(Array("REPLCONF", "listening-port", slavePort)))
+        response = in.readLine()
+
+        out.print(respEncoder.encodeArray(Array("REPLCONF", "capa", "psync2")))
+        response = in.readLine()
+        
         socket.close()
     }
 
@@ -343,7 +350,7 @@ object Server {
         if (argMap.contains("replicaof")) {
             serverConfig = new ServerConfig("slave", "", 0)
             val Array(masterHost, masterPort) = argMap.get("replicaof").getOrElse(" ").split(" ")
-            handshake(masterHost, masterPort)
+            handshake(masterHost, masterPort, port)
         }
 
         try {
