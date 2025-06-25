@@ -300,6 +300,11 @@ object Server {
             event.outputStream.write(output.getBytes())
         } else if (event.message(0).toUpperCase() == "INFO") {
             event.outputStream.write(respEncoder.encodeBulkString(s"role:${serverConfig.role}\nmaster_replid:${serverConfig.master_replid}\nmaster_repl_offset:${serverConfig.master_repl_offset}").getBytes())
+        } else if (event.message(0).toUpperCase() == "REPLCONF") {
+            if (event.message.length != 3) {
+                throw new Exception("Invalid arguments, required: REPLCONF ARG1 ARG2")
+            }
+            event.outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
         }
 
         event.outputStream.flush()

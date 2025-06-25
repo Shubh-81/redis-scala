@@ -2,6 +2,10 @@ package codecrafters_redis.utils
 
 class RESPEncoder {
 
+    def encodeSimpleString(input: String): String = {
+        return s"+${input}\r\n"
+    }
+
     def encodeBulkString(input: String): String = {
         val len = input.length()
         return s"$$${len}\r\n${input}\r\n"
