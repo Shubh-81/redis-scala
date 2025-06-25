@@ -335,7 +335,10 @@ object Server {
 
         out.print(respEncoder.encodeArray(Array("REPLCONF", "capa", "psync2")))
         response = in.readLine()
-        
+
+        out.print(respEncoder.encodeArray(Array("PSYNC", "?", "-1")))
+        response = in.readLine()
+
         socket.close()
     }
 
