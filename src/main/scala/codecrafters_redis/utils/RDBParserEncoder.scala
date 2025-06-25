@@ -6,14 +6,6 @@ import java.time.Instant
 import java.time.Duration
 import scala.collection.mutable.ArrayBuffer
 
-sealed trait EncodingType 
-object EncodingType {
-    case object STRING_ENCODING extends EncodingType
-    case object SIZE_ENCODING extends EncodingType
-}
-
-case class ExpiryInfo(expiry: Long, setAt: LocalDateTime)   
-
 class RDBParserEncoder {
 
     def string_encoder(input: String, size_encoding: Boolean = true): Array[Byte] = {
@@ -33,7 +25,7 @@ class RDBParserEncoder {
     def string_decoder(input: Array[Byte], index: Int): (String, Int) = {
         if (index >= input.length) {
             println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-            println("End of file unexpectedly");
+            println("End of file unexpectedly")
             return ("", index + 1)
         }
 
@@ -43,7 +35,7 @@ class RDBParserEncoder {
         while (idx < stringLen) {
             if ((newIndex + idx) >= input.length) {
                 println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
-                println("Unexpected EOF: string")
+                println("End of file unexpectedly")
                 return ("", index + 1)
             }
             res += input(newIndex + idx).toChar
@@ -143,9 +135,5 @@ class RDBParserEncoder {
         val expiryTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneOffset.ofHoursMinutes(5, 30))
         val expiry = Duration.between(LocalDateTime.now(), expiryTime).toMillis()
         return (expiry, LocalDateTime.now(), index + i)
-    }
-
-    def encode(input: String, encodingType: EncodingType): String = {
-        return ""
     }
 }

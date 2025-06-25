@@ -13,7 +13,6 @@ import java.time.Duration
 import scala.collection.immutable.Map
 import scala.io.Source
 import codecrafters_redis.utils.RDBParserEncoder
-import codecrafters_redis.utils.EncodingType
 import java.util.concurrent.{ScheduledExecutorService, Executors}
 import java.util.concurrent.TimeUnit
 import scala.util.matching.Regex
@@ -21,10 +20,12 @@ import java.util.regex.Pattern
 import scala.jdk.CollectionConverters._
 import java.nio.file.Files
 import java.nio.file.Paths
+import codecrafters_redis.utils.RESPEncoder
+import scala.util.Random
 
 case class Event(outputStream: OutputStream, message: ArrayBuffer[String])
 case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
-case class ServerConfig(role: String)
+case class ServerConfig(role: String, master_replid: String, master_repl_offset: Long)
 
 case class Config(dir: String, dbFileName: String)
 
@@ -32,7 +33,9 @@ object Server {
     
     final val cache = new ConcurrentHashMap[String, CacheElement]()
     final var config = new Config("", "")
-    final var serverConfig = new ServerConfig("master")
+    final var serverConfig = new ServerConfig("master", Random.alphanumeric.take(40).mkString, 0)
+
+    final val respEncoder = new RESPEncoder()
 
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 
@@ -136,10 +139,6 @@ object Server {
         }
 
         val rdbDecoder = new RDBParserEncoder()
-
-        println(s"Reading file: ${file.getAbsolutePath()}")
-        println(s"File exists: ${file.exists()}")
-        println(s"File length: ${file.length()}")
         
         val bytes: Array[Byte] = Files.readAllBytes(Paths.get(config.dir, config.dbFileName))
         val hexString = bytes.map("%02x".format(_)).mkString("\n")
@@ -310,7 +309,7 @@ object Server {
 
             event.outputStream.write(output.getBytes())
         } else if (event.message(0).toUpperCase() == "INFO") {
-            event.outputStream.write(s"$$${5 + serverConfig.role.length()}\r\nrole:${serverConfig.role}\r\n".getBytes())
+            event.outputStream.write(respEncoder.encodeBulkString(Array(s"role:${serverConfig.role}", s"master_replid:${serverConfig.master_replid}", s"master_repl_offset:${serverConfig.master_repl_offset}")).getBytes())
         }
 
         event.outputStream.flush()
@@ -340,7 +339,7 @@ object Server {
         serverSocket.bind(new InetSocketAddress("localhost", port.toInt))
 
         if (argMap.contains("replicaof")) {
-            serverConfig = new ServerConfig("slave")
+            serverConfig = new ServerConfig("slave", "", 0)
         }
 
         try {
