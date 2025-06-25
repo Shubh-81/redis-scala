@@ -309,7 +309,7 @@ object Server {
 
             event.outputStream.write(output.getBytes())
         } else if (event.message(0).toUpperCase() == "INFO") {
-            event.outputStream.write(respEncoder.encodeBulkString(Array(s"role:${serverConfig.role}", s"master_replid:${serverConfig.master_replid}", s"master_repl_offset:${serverConfig.master_repl_offset}")).getBytes())
+            event.outputStream.write(respEncoder.encodeSimpleString(s"role:${serverConfig.role}\nmaster_replid:${serverConfig.master_replid}\nmaster_repl_offset:${serverConfig.master_repl_offset}").getBytes())
         }
 
         event.outputStream.flush()
