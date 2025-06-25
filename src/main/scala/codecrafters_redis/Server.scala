@@ -153,8 +153,6 @@ object Server {
                 idx = newIndex1
                 val (redisVersionValue, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex2
-                println(redisVersionKey)
-                println(redisVersionValue)
             }
             else if ((bytes(idx).toLong & 0xFF) == 0xFE) {
                 idx += 2
@@ -169,9 +167,6 @@ object Server {
                 val (expiryCountVal, newIndex2) = rdbDecoder.size_decoder(bytes, idx)
                 idx = newIndex2
                 expiryCount = expiryCountVal
-
-                println(totalCount)
-                println(expiryCount)
             }
             else if ((bytes(idx).toLong & 0xFF) == 0xFC && expiryCount > 0 && totalCount > 0) {
                 idx += 1
@@ -188,8 +183,6 @@ object Server {
                 val (value, newIndex3) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex3
 
-                println(s"${key} ${value}")
-
                 cache.put(key, new CacheElement(value, Some(expiry), setAt))
             }
             else if ((bytes(idx).toLong & 0xFF) == 0x00 && totalCount > 0) {
@@ -202,7 +195,6 @@ object Server {
                 val (value, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex2
 
-                println(s"${key} ${value}")
                 cache.put(key, new CacheElement(value, None, LocalDateTime.now()))
             } else {
                 idx+=1
@@ -231,7 +223,6 @@ object Server {
     }
 
     private def processEvent(event: Event): Unit = {
-        println(s"Proccessing event: ${event}")
         if (event.message(0).toUpperCase() == "PING") {
             event.outputStream.write("+PONG\r\n".getBytes())
 
@@ -293,7 +284,6 @@ object Server {
                 throw new Exception("Invalid arguments, required: KEYS <PATTERN>")
             }
             val pattern: Regex = globToRegex(event.message(1)).r
-            println(s"pattern: ${pattern}")
             
             val filteredKeys = cache.keySet().asScala.filter { key =>
                 // Use proper regex matching syntax
@@ -309,7 +299,7 @@ object Server {
 
             event.outputStream.write(output.getBytes())
         } else if (event.message(0).toUpperCase() == "INFO") {
-            event.outputStream.write(respEncoder.encodeSimpleString(s"role:${serverConfig.role}\nmaster_replid:${serverConfig.master_replid}\nmaster_repl_offset:${serverConfig.master_repl_offset}").getBytes())
+            event.outputStream.write(respEncoder.encodeBulkString(s"role:${serverConfig.role}\nmaster_replid:${serverConfig.master_replid}\nmaster_repl_offset:${serverConfig.master_repl_offset}").getBytes())
         }
 
         event.outputStream.flush()
@@ -330,6 +320,18 @@ object Server {
         }
     }
 
+    private def handshake(masterHost: String, masterPort: String) {
+        val socket = new Socket(masterHost, masterPort.toInt)
+        val out = new PrintStream(socket.getOutputStream(), true)
+        val in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
+
+        out.print(respEncoder.encodeArray(Array("PING")))
+        out.flush()
+
+        val response = in.readLine()
+        socket.close()
+    }
+
     def main(args: Array[String]): Unit = {
         var argMap = parseArguments(args)
         config = new Config(argMap.get("dir").getOrElse("/temp/redis-files/"), argMap.get("dbfilename").getOrElse("dump.rdb"))
@@ -340,6 +342,8 @@ object Server {
 
         if (argMap.contains("replicaof")) {
             serverConfig = new ServerConfig("slave", "", 0)
+            val Array(masterHost, masterPort) = argMap.get("replicaof").getOrElse(" ").split(" ")
+            handshake(masterHost, masterPort)
         }
 
         try {
@@ -372,7 +376,6 @@ object Server {
                     var len = 0
 
                     reader.lines().forEach { line =>
-                        println(s"Input Line: ${line}")
                         if (line.startsWith("*") && idx >= (2 * len)) {
                             len = Integer.parseInt(line.substring(1))
                             idx = 0
