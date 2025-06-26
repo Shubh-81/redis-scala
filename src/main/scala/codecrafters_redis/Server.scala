@@ -218,100 +218,6 @@ object Server {
         s"^${escaped}$$"
     }
 
-    // private def processEvent(event: Event): Unit = {
-    //     if (event.message(0).toUpperCase() == "PING") {
-    //         event.outputStream.write("+PONG\r\n".getBytes())
-
-    //     } else if (event.message(0).toUpperCase() == "ECHO") {
-    //         if (event.message.length < 2) {
-
-    //         }
-    //         event.outputStream.write(s"+${event.message(1)}\r\n".getBytes())
-
-    //     } else if (event.message(0).toUpperCase() == "SET") {
-    //         if (event.message.length < 3) {
-    //             throw new Exception("Invalid arguments")
-    //         }
-
-    //         var exp: Option[Long] = None
-    //         if (event.message.length >= 5 && event.message(3).toUpperCase() == "PX") {
-    //             exp = Some(event.message(4).toLong)
-    //         }
-
-    //         cache.put(event.message(1), new CacheElement(event.message(2), exp, LocalDateTime.now()))
-    //         event.outputStream.write("+OK\r\n".getBytes())
-    //     } else if (event.message(0).toUpperCase() == "GET") {
-    //         if (event.message.length < 2) {
-    //             throw new Exception("Invalid arguments")
-    //         }
-
-    //         if (cache.containsKey(event.message(1))) {
-    //             val value = cache.get(event.message(1))
-                
-    //             value.expiry match {
-    //                 case Some(exp) => {
-    //                     val duration = Duration.between(value.setAt, LocalDateTime.now()).toMillis.toLong
-    //                     if (duration <= exp) {
-    //                         event.outputStream.write(s"+${value.value}\r\n".getBytes())
-    //                     } else {
-    //                         cache.remove(event.message(1))
-    //                         event.outputStream.write("$-1\r\n".getBytes())
-    //                     }
-    //                 }
-    //                 case None => event.outputStream.write(s"+${value.value}\r\n".getBytes())
-    //             }
-    //         } else {
-    //             event.outputStream.write("$-1\r\n".getBytes())
-    //         }
-    //     } else if (event.message(0).toUpperCase() == "CONFIG" && event.message(1).toUpperCase() == "GET") {
-    //         if (event.message.length != 3) {
-    //             throw new Exception("Invalid arguments")
-    //         }
-
-    //         if (event.message(2) == "dir") {
-    //             event.outputStream.write(("*2\r\n$3\r\ndir\r\n$" + config.dir.length + "\r\n" + config.dir + "\r\n").getBytes())
-    //         } else if (event.message(2) == "dbfilename") {
-    //             event.outputStream.write(("*2\r\n$10\r\ndbfilename\r\n$" + config.dbFileName.length + "\r\n" + config.dbFileName + "\r\n").getBytes())
-    //         }
-    //     } else if (event.message(0).toUpperCase() == "SAVE") {
-    //         saveState()
-    //     } else if (event.message(0).toUpperCase() == "KEYS") {
-    //         if (event.message.length != 2) {
-    //             throw new Exception("Invalid arguments, required: KEYS <PATTERN>")
-    //         }
-    //         val pattern: Regex = globToRegex(event.message(1)).r
-            
-    //         val filteredKeys = cache.keySet().asScala.filter { key =>
-    //             // Use proper regex matching syntax
-    //             pattern.findFirstIn(key).isDefined
-    //         }
-
-    //         val len = filteredKeys.size
-    //         var output = s"*${len}\r\n"
-    //         for (key <- filteredKeys) {
-    //             output += s"$$${key.length}\r\n"
-    //             output += s"${key}\r\n"
-    //         }
-
-    //         event.outputStream.write(output.getBytes())
-    //     } else if (event.message(0).toUpperCase() == "INFO") {
-    //         event.outputStream.write(respEncoder.encodeBulkString(s"role:${serverConfig.role}\nmaster_replid:${serverConfig.master_replid}\nmaster_repl_offset:${serverConfig.master_repl_offset}").getBytes())
-    //     } else if (event.message(0).toUpperCase() == "REPLCONF") {
-    //         if (event.message.length != 3) {
-    //             throw new Exception("Invalid arguments, required: REPLCONF ARG1 ARG2")
-    //         }
-    //         event.outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
-    //     } else if (event.message(0).toUpperCase == "PSYNC") {
-    //         if (event.message.length != 3) {
-    //             throw new Exception("Invalid arguments, required: PSYNC ? -1")
-    //         }
-
-    //         event.outputStream.write(respEncoder.encodeSimpleString(s"FULLRESYNC ${serverConfig.master_replid} 0").getBytes())
-    //     }
-
-    //     event.outputStream.flush()
-    // }
-
     private def eventLoop(queue: BlockingQueue[Event]): Unit = {
         while (!Thread.currentThread().isInterrupted()) {
             try {
@@ -353,8 +259,8 @@ object Server {
         var argMap = parseArguments(args)
 
         // Get RDB File location from arguments or revert to defaults
-        val dir = argMap.get("dir").getOrElse("/temp/redis-files/")
-        val dbFileName = argMap.get("dbfilename").getOrElse("dump.rdb")
+        val dir = argMap.get("dir").getOrElse("./test/dir/")
+        val dbFileName = argMap.get("dbfilename").getOrElse("test.rdb")
 
         // Get host and port
         val port = argMap.get("port").getOrElse("6379").toInt

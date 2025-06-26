@@ -1,5 +1,8 @@
 package codecrafters_redis.utils
 
+import java.io.File
+import java.nio.file.Files
+
 class RESPEncoder {
 
     def encodeSimpleString(input: String): String = {
@@ -23,5 +26,23 @@ class RESPEncoder {
         }
 
         return res
+    }
+
+    private def bytesToBinary(bytes: Array[Byte]): String = {
+        var res = ""
+        for (byte <- bytes) {
+            res += byte.toBinaryString
+        }
+
+        return res
+    }
+
+    def encodeRDBFile(file: File): String = {
+        val bytes = Files.readAllBytes(file.toPath)
+
+        val binaryString = bytesToBinary(bytes)
+        val len = binaryString.length()
+        println("binaryString: " + binaryString)
+        return s"${binaryString}"
     }
 }

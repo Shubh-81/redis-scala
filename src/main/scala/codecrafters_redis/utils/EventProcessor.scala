@@ -9,6 +9,8 @@ import codecrafters_redis.Server.saveState
 import scala.util.matching.Regex
 import scala.jdk.CollectionConverters._
 import java.time.Duration
+import java.io.File
+import java.nio.file.Files
 
 class EventProcessor(
     val outputStream: OutputStream,
@@ -112,13 +114,13 @@ class EventProcessor(
                     } else {
                         // Remove if expired
                         cache.remove(key)
-                        outputStream.write(respEncoder.encodeSimpleString("").getBytes())
+                        outputStream.write(respEncoder.encodeBulkString("").getBytes())
                     }
                 }
                 case None => outputStream.write(respEncoder.encodeSimpleString(value.value).getBytes())
             }
         } else {
-            outputStream.write(respEncoder.encodeSimpleString("").getBytes())
+            outputStream.write(respEncoder.encodeBulkString("").getBytes())
         }
     }
 
@@ -137,6 +139,7 @@ class EventProcessor(
     private def process_save(): Unit = {
         // Save current cache state to RDB File
         saveState()
+        outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
     }
 
     private def process_keys(event: Array[String]): Unit = {
@@ -179,5 +182,12 @@ class EventProcessor(
         }
 
         outputStream.write(respEncoder.encodeSimpleString(s"FULLRESYNC ${config.master_replid} ${config.master_repl_offset}").getBytes())
+        saveState()
+        
+        val dir = new File(config.dir)
+        val file = new File(dir, config.dbFileName)
+        val bytes = Files.readAllBytes(file.toPath)
+        outputStream.write(s"$$${file.length()}\r\n".getBytes())
+        outputStream.write(bytes)
     }
 }
