@@ -8,6 +8,9 @@ class RESPEncoder {
 
     def encodeBulkString(input: String): String = {
         val len = input.length()
+        if (len == 0) {
+            return "$-1\r\n"
+        }
         return s"$$${len}\r\n${input}\r\n"
     }
 
