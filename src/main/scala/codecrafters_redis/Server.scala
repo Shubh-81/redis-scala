@@ -271,8 +271,9 @@ object Server {
             while (true) {
                 reader.lines().forEach { line =>
                     println(s"line: ${line}")
-                    if (line.startsWith("*") && idx >= (2 * len)) {
-                        len = Integer.parseInt(line.substring(1))
+                    if (idx == (2 * len)) {
+                        if (line(0) == '*') len = Integer.parseInt(line.substring(1))
+                        else    len = Integer.parseInt(line)
                         idx = 0
 
                         command = ArrayBuffer[String]()
