@@ -21,19 +21,25 @@ import scala.jdk.CollectionConverters._
 import java.nio.file.Files
 import java.nio.file.Paths
 import codecrafters_redis.utils.RESPEncoder
+import codecrafters_redis.utils.RESPDecoder
 import scala.util.Random
 import codecrafters_redis.utils.EventProcessor
+import scala.collection.mutable.Set
 
 case class Event(eventProcessor: EventProcessor, message: ArrayBuffer[String])
 case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
-case class Config(dir: String, dbFileName: String, role: String, master_replid: String, master_repl_offset: Long, port: Int, host: String)
+case class Config(dir: String, dbFileName: String, role: String, master_replid: String, master_repl_offset: Long, master_host: String, master_port: Int, port: Int, host: String)
 
 object Server {
     
     final val cache = new ConcurrentHashMap[String, CacheElement]()
-    final var config = new Config("", "", "master", Random.alphanumeric.take(40).mkString, 0, 6379, "")
+    final var config = new Config("", "", "master", Random.alphanumeric.take(40).mkString, 0, "", 6379, 6379, "")
     final val respEncoder = new RESPEncoder()
+    final val respDecoder = new RESPDecoder()
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+    final var slavePorts = Set[Int]()
+    final var slaveOutputStreams = Set[OutputStream]()
+    final val q: BlockingQueue[Event] = new LinkedBlockingQueue[Event]()
 
     private def startScheduledSaveState(): Unit = {
         scheduler.scheduleAtFixedRate(
@@ -122,22 +128,9 @@ object Server {
         outputStream.close()
     }
 
-    private def loadSavedState(): Unit = {
-        val dir = new File(config.dir)
-        if (!dir.exists()) {
-            println(s"${config.dir} does not exists")
-            return
-        }
-        val file = new File(dir, config.dbFileName)
-        if (!file.exists()) {
-            println(s"${config.dbFileName} does not exists")
-            return
-        }
-
+    private def loadFromBytes(bytes: Array[Byte]): Unit = {
         val rdbDecoder = new RDBParserEncoder()
-        
-        val bytes: Array[Byte] = Files.readAllBytes(Paths.get(config.dir, config.dbFileName))
-        val hexString = bytes.map("%02x".format(_)).mkString("\n")
+
         var idx = 9
         var totalCount = 0L
         var expiryCount = 0L
@@ -198,24 +191,20 @@ object Server {
         }
     }
 
-    def globToRegex(glob: String): String = {
-        val escaped = glob
-            .replace("\\", "\\\\")    // Escape backslashes first
-            .replace(".", "\\.")      // Escape dots
-            .replace("^", "\\^")      // Escape carets
-            .replace("$", "\\$")      // Escape dollars
-            .replace("+", "\\+")      // Escape plus
-            .replace("(", "\\(")      // Escape parentheses
-            .replace(")", "\\)")
-            .replace("[", "\\[")      // Escape brackets
-            .replace("]", "\\]")
-            .replace("{", "\\{")      // Escape braces
-            .replace("}", "\\}")
-            .replace("|", "\\|")      // Escape pipes
-            .replace("*", ".*")       // Convert glob * to regex .*
-            .replace("?", ".")        // Convert glob ? to regex .
+    private def loadSavedState(): Unit = {
+        val dir = new File(config.dir)
+        if (!dir.exists()) {
+            println(s"${config.dir} does not exists")
+            return
+        }
+        val file = new File(dir, config.dbFileName)
+        if (!file.exists()) {
+            println(s"${config.dbFileName} does not exists")
+            return
+        }
         
-        s"^${escaped}$$"
+        val bytes: Array[Byte] = Files.readAllBytes(Paths.get(config.dir, config.dbFileName))
+        loadFromBytes(bytes)
     }
 
     private def eventLoop(queue: BlockingQueue[Event]): Unit = {
@@ -235,24 +224,74 @@ object Server {
 
     private def handshake(masterHost: String, masterPort: String, slavePort: Int) {
         val socket = new Socket(masterHost, masterPort.toInt)
-        val out = new PrintStream(socket.getOutputStream(), true)
-        val in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
+        Using.resources(socket.getInputStream(), socket.getOutputStream()) { (in, os) =>
+            val out = new PrintStream(os, true)
+            val reader = new BufferedReader(new InputStreamReader(in))
 
-        out.print(respEncoder.encodeArray(Array("PING")))
-        out.flush()
+            out.print(respEncoder.encodeArray(Array("PING")))
+            var response = respDecoder.decodeSimpleString(reader.readLine())
 
-        var response = in.readLine()
+            if (response != "PONG") {
+                throw new Exception(s"Error establishing connection with master, expected: PONG, recieved: ${response}")
+            }
 
-        out.print(respEncoder.encodeArray(Array("REPLCONF", "listening-port", slavePort.toString)))
-        response = in.readLine()
+            out.print(respEncoder.encodeArray(Array("REPLCONF", "listening-port", slavePort.toString)))
+            response = respDecoder.decodeSimpleString(reader.readLine())
 
-        out.print(respEncoder.encodeArray(Array("REPLCONF", "capa", "psync2")))
-        response = in.readLine()
+            if (response != "OK") {
+                throw new Exception(s"Error establishing connection with master, expected: OK (1), recieved: ${response}")
+            } 
 
-        out.print(respEncoder.encodeArray(Array("PSYNC", "?", "-1")))
-        response = in.readLine()
+            out.print(respEncoder.encodeArray(Array("REPLCONF", "capa", "psync2")))
+            response = respDecoder.decodeSimpleString(reader.readLine())
 
-        socket.close()
+            if (response != "OK") {
+                throw new Exception(s"Error establishing connection with master, expected: OK (2), recieved: ${response}")
+            } 
+
+            out.print(respEncoder.encodeArray(Array("PSYNC", "?", "-1")))
+            val masterConfig = respDecoder.decodeSimpleString(reader.readLine()).split(" ")
+            val fileLen = respDecoder.decodeSimpleString(reader.readLine()).toInt
+
+            val fileBytes = new ArrayBuffer[Byte](fileLen)
+            var bytesRead = 0
+            while (reader.ready() && bytesRead < fileLen) {
+                val byte = reader.read().toByte
+                fileBytes += byte
+                bytesRead += 1
+            }
+
+            loadFromBytes(fileBytes.toArray)
+
+            val eventProcessor = new EventProcessor(None, cache, config, slavePorts, slaveOutputStreams)
+            var command: ArrayBuffer[String] = ArrayBuffer[String]()
+            var idx = 0
+            var len = 0
+
+            while (true) {
+                reader.lines().forEach { line =>
+                    println(s"line: ${line}")
+                    if (line.startsWith("*") && idx >= (2 * len)) {
+                        len = Integer.parseInt(line.substring(1))
+                        idx = 0
+
+                        command = ArrayBuffer[String]()
+                    } else {
+                        if (idx % 2 == 0) {
+                            idx += 1
+                        } else {
+                            command += line
+                            idx += 1
+
+                            if (idx == 2 * len) {
+                                println(s"command: ${command}")
+                                q.offer(new Event(eventProcessor, command))
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private def set_config(args: Array[String]): Unit = {
@@ -270,10 +309,14 @@ object Server {
         val isSlave = argMap.contains("replicaof")
         val role = if (isSlave) "slave" else "master"
 
-        // If is slave then handshake with the master
+        var masterHost = host
+        var masterPort = port
+
+        // If is slave then get master details and handshake
         if (isSlave) {
-            val Array(masterHost, masterPort) = argMap.get("replicaof").getOrElse(" ").split(" ")
-            handshake(masterHost, masterPort, port)
+            val Array(masterHostStr, masterPortStr) = argMap.get("replicaof").getOrElse(" ").split(" ")
+            masterHost = masterHostStr
+            masterPort = masterPortStr.toInt
         }
 
         config = new Config(
@@ -282,6 +325,8 @@ object Server {
             role, 
             Random.alphanumeric.take(40).mkString, 
             0,
+            masterHost,
+            masterPort,
             port,
             host
         )
@@ -291,7 +336,8 @@ object Server {
         set_config(args)
 
         // Connect to provided host and port
-        val serverSocket = new ServerSocket();
+        val serverSocket = new ServerSocket()
+        println(s"Server started as host: ${config.host}, port: ${config.port}")
         serverSocket.bind(new InetSocketAddress(config.host, config.port))
 
         // Try to load saved RDB
@@ -304,22 +350,28 @@ object Server {
         
         // Buffer to store threads
         var threads = ListBuffer[Thread]()
-        // Blocking queue for event loop
-        var q: BlockingQueue[Event] = new LinkedBlockingQueue[Event]()
+        
         val workerThread = new Thread(() => {
             eventLoop(q)
         })
         workerThread.setDaemon(true)
         workerThread.start()
 
+        if (config.role == "slave") {
+            var slaveThread = new Thread(() => {
+                handshake(config.master_host, config.master_port.toString(), config.port)
+            })
+
+            slaveThread.setDaemon(true)
+            slaveThread.start()
+        }
+
         while (true) {
             val clientSocket = serverSocket.accept()
-
-            val thread = new Thread(() => {         
+            val thread = new Thread(() => {
                 Using.resources(clientSocket.getInputStream(), clientSocket.getOutputStream()) { (is, os) =>
-
                     val reader = new BufferedReader(new InputStreamReader(is));
-                    val eventProcessor = new EventProcessor(os, cache, config)
+                    val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams)
                     var command: ArrayBuffer[String] = ArrayBuffer[String]()
                     var idx = 0
                     var len = 0
@@ -338,6 +390,7 @@ object Server {
                                 idx += 1
 
                                 if (idx == 2 * len) {
+                                    println(s"command: ${command}")
                                     q.offer(new Event(eventProcessor, command))
                                 }
                             }
@@ -345,11 +398,10 @@ object Server {
                     }
                 }
             })
-            thread.start()
-            threads += thread
+            thread.start()   
         }
-        
-        threads.foreach(_.join()) 
+
+        workerThread.join()
     }
 
     private def parseArguments(args: Array[String]): Map[String, String] = {

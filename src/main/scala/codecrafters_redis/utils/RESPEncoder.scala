@@ -42,7 +42,6 @@ class RESPEncoder {
 
         val binaryString = bytesToBinary(bytes)
         val len = binaryString.length()
-        println("binaryString: " + binaryString)
         return s"${binaryString}"
     }
 }

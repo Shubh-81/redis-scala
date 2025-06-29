@@ -11,11 +11,18 @@ import scala.jdk.CollectionConverters._
 import java.time.Duration
 import java.io.File
 import java.nio.file.Files
+import scala.collection.mutable.ArrayBuffer
+import scala.annotation.switch
+import scala.collection.mutable.Set
+import java.net.Socket
+import java.io.PrintStream
 
 class EventProcessor(
-    val outputStream: OutputStream,
+    val outputStream: Option[OutputStream],
     val cache: ConcurrentHashMap[String, CacheElement],
-    val config: Config
+    val config: Config,
+    val slavePorts: Set[Int],
+    val slaveOutputStreams: Set[OutputStream]
 ) {
 
     final val respEncoder = new RESPEncoder()
@@ -41,6 +48,13 @@ class EventProcessor(
         s"^${escaped}$$"
     }
 
+    private def writeToOutput(data: Array[Byte]): Unit = {
+        outputStream match {
+            case Some(os) => os.write(data)
+            case _ => // Do nothing
+        }
+    }
+
     def process_event(event: Array[String]): Unit = {
         if (event.length == 0) {
             throw new Exception("Empty event")
@@ -62,8 +76,14 @@ class EventProcessor(
         }
     }
 
+    private def propogate_command(event: Array[String]): Unit = {
+        for (slaveOutputStream <- slaveOutputStreams) {
+            slaveOutputStream.write(respEncoder.encodeArray(event).getBytes())
+        }
+    }
+
     private def process_ping(): Unit = {
-        outputStream.write(respEncoder.encodeSimpleString("PONG").getBytes())
+        writeToOutput(respEncoder.encodeSimpleString("PONG").getBytes())
     }
 
     private def process_echo(event: Array[String]): Unit = {
@@ -71,10 +91,11 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: ECHO <command>")
         }
 
-        outputStream.write(respEncoder.encodeSimpleString(event(1)).getBytes())
+        writeToOutput(respEncoder.encodeSimpleString(event(1)).getBytes())
     }
 
     private def process_set(event: Array[String]): Unit = {
+        println(s"event: ${event}")
         if (event.length != 3 && event.length != 5) {
             throw new Exception("Invalid Inputs, required: SET <key> <value> (optional) PX <expiry>")
         }
@@ -91,7 +112,8 @@ class EventProcessor(
         val value = event(2)
         cache.put(key, new CacheElement(value, exp, LocalDateTime.now()))
 
-        outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
+        writeToOutput(respEncoder.encodeSimpleString("OK").getBytes())
+        if (config.role == "master")    propogate_command(event)
     }
 
     private def process_get(event: Array[String]): Unit = {
@@ -110,17 +132,17 @@ class EventProcessor(
                     val duration = Duration.between(value.setAt, LocalDateTime.now()).toMillis.toLong
                     // Check if element is expired
                     if (duration <= exp) {
-                        outputStream.write(respEncoder.encodeSimpleString(value.value).getBytes())
+                        writeToOutput(respEncoder.encodeSimpleString(value.value).getBytes())
                     } else {
                         // Remove if expired
                         cache.remove(key)
-                        outputStream.write(respEncoder.encodeBulkString("").getBytes())
+                        writeToOutput(respEncoder.encodeBulkString("").getBytes())
                     }
                 }
-                case None => outputStream.write(respEncoder.encodeSimpleString(value.value).getBytes())
+                case None => writeToOutput(respEncoder.encodeSimpleString(value.value).getBytes())
             }
         } else {
-            outputStream.write(respEncoder.encodeBulkString("").getBytes())
+            writeToOutput(respEncoder.encodeBulkString("").getBytes())
         }
     }
 
@@ -130,8 +152,8 @@ class EventProcessor(
         }
 
         event(2) match {
-            case "dir" => outputStream.write(respEncoder.encodeArray(Array("dir", config.dir)).getBytes())
-            case "dbfilename" => outputStream.write(respEncoder.encodeArray(Array("dbfilename", config.dbFileName)).getBytes())
+            case "dir" => writeToOutput(respEncoder.encodeArray(Array("dir", config.dir)).getBytes())
+            case "dbfilename" => writeToOutput(respEncoder.encodeArray(Array("dbfilename", config.dbFileName)).getBytes())
             case _ => throw new Exception("Invalid Inputs, required: key = dir/dbfilename")
         }
     }
@@ -139,7 +161,7 @@ class EventProcessor(
     private def process_save(): Unit = {
         // Save current cache state to RDB File
         saveState()
-        outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
+        writeToOutput(respEncoder.encodeSimpleString("OK").getBytes())
     }
 
     private def process_keys(event: Array[String]): Unit = {
@@ -155,11 +177,11 @@ class EventProcessor(
             // Use proper regex matching syntax
             pattern.findFirstIn(key).isDefined
         }
-        outputStream.write(respEncoder.encodeArray(filteredKeys.toArray).getBytes())
+        writeToOutput(respEncoder.encodeArray(filteredKeys.toArray).getBytes())
     }
 
     private def process_info(): Unit = {
-        outputStream.write(
+        writeToOutput(
             respEncoder.encodeBulkString(
                 s"role:${config.role}\n" +
                 s"master_replid:${config.master_replid}\n" +
@@ -172,8 +194,27 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: REPLCONF <arg1> <arg2>")
         }
 
-        // Return OK for now
-        outputStream.write(respEncoder.encodeSimpleString("OK").getBytes())
+        event(1) match {
+            case "listening-port" => {
+                try {
+                    val slavePort = event(2).toInt
+                    slavePorts += slavePort
+
+                    slaveOutputStreams += outputStream.get
+
+                    writeToOutput(respEncoder.encodeSimpleString("OK").getBytes())
+                } catch {
+                    case e: Exception => {
+                        writeToOutput(respEncoder.encodeSimpleString(e.getMessage()).getBytes())
+                    }
+                }
+
+                return
+            }
+            case _ => {
+                writeToOutput(respEncoder.encodeSimpleString("OK").getBytes())
+            }
+        }
     }
 
     private def process_psync(event: Array[String]): Unit = {
@@ -181,13 +222,13 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: PSYNC ? -1")
         }
 
-        outputStream.write(respEncoder.encodeSimpleString(s"FULLRESYNC ${config.master_replid} ${config.master_repl_offset}").getBytes())
+        writeToOutput(respEncoder.encodeSimpleString(s"FULLRESYNC ${config.master_replid} ${config.master_repl_offset}").getBytes())
         saveState()
         
         val dir = new File(config.dir)
         val file = new File(dir, config.dbFileName)
         val bytes = Files.readAllBytes(file.toPath)
-        outputStream.write(s"$$${file.length()}\r\n".getBytes())
-        outputStream.write(bytes)
+        writeToOutput(s"$$${bytes.length}\r\n".getBytes())
+        writeToOutput(bytes)
     }
 }

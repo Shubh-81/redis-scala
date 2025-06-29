@@ -24,7 +24,6 @@ class RDBParserEncoder {
 
     def string_decoder(input: Array[Byte], index: Int): (String, Int) = {
         if (index >= input.length) {
-            println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
             println("End of file unexpectedly")
             return ("", index + 1)
         }
@@ -34,7 +33,6 @@ class RDBParserEncoder {
         var res = ""
         while (idx < stringLen) {
             if ((newIndex + idx) >= input.length) {
-                println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
                 println("End of file unexpectedly")
                 return ("", index + 1)
             }
@@ -47,7 +45,6 @@ class RDBParserEncoder {
 
     def size_decoder(input: Array[Byte], index: Int): (Long, Int) = {
         if (index >= input.length) {
-            println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
             println("End of file unexpectedly");
             return (0, index + 1)
         }
@@ -56,7 +53,6 @@ class RDBParserEncoder {
             (input(index).toLong, index + 1)
         } else if ((input(index).toLong & 0xC0) == 0x40) {
             if (index == input.length - 1) {
-                println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
                 println("Unexpected end of file")
                 return (0, index + 1)
             }
@@ -66,7 +62,6 @@ class RDBParserEncoder {
             (res, index + 2)
         } else if ((input(index).toLong & 0xC0) == 0x80) {
             if ((index + 5) > input.length) {
-                println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
                 println("Unexpected end of file")
                 return (0, index + 1)
             }
@@ -77,7 +72,6 @@ class RDBParserEncoder {
 
             (res, index + 5)
         } else {
-            println(input.slice(index, input.length).map("%02x".format(_)).mkString(s" ${index} \n"))
             (0, index + 1)
         }
     }
@@ -120,7 +114,6 @@ class RDBParserEncoder {
 
     def expiry_decoder(input: Array[Byte], index: Int): (Long, LocalDateTime, Int) = {
         if ((index + 8) > input.length) {
-            println(input.slice(index, input.length).map("%02x".format(_)).mkString("\n"))
             println("Unexpected EOF: Expiry")
             return (0, LocalDateTime.now(), index + 1)
         }
