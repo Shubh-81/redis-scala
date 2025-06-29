@@ -270,7 +270,7 @@ object Server {
 
             while (true) {
                 reader.lines().forEach { line =>
-                    println(s"line: ${line}")
+                    println(s"processed: ${eventProcessor.totalBytesProcessed}(s) bytes")
                     if (idx == (2 * len)) {
                         if (line(0) == '*') len = Integer.parseInt(line.substring(1))
                         else    len = Integer.parseInt(line)

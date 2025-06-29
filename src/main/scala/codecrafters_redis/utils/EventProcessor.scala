@@ -28,6 +28,7 @@ class EventProcessor(
 
     final val respEncoder = new RESPEncoder()
     final val writeCommands = Set[String]("SET")
+    final var totalBytesProcessed: Long = 0
 
     // Helper to convert glob input into compatible regex
     private def glob_to_regex(glob: String): String = {
@@ -80,6 +81,8 @@ class EventProcessor(
             case "PSYNC" => process_psync(event)
             case _ => throw new Exception("Unsupported command")
         }
+
+        totalBytesProcessed += respEncoder.encodeArray(event).getBytes().length.toLong
     }
 
     private def propogate_command(event: Array[String]): Unit = {
@@ -218,7 +221,7 @@ class EventProcessor(
                 return
             }
             case "GETACK" => {
-                writeToOutput(respEncoder.encodeArray(Array("REPLCONF", "ACK", "0")).getBytes(), event(0))
+                writeToOutput(respEncoder.encodeArray(Array("REPLCONF", "ACK", totalBytesProcessed.toString)).getBytes(), event(0))
                 return
             }
             case _ => {
