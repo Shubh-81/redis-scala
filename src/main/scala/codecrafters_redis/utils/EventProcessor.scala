@@ -27,7 +27,7 @@ class EventProcessor(
 ) {
 
     final val respEncoder = new RESPEncoder()
-    final val writeCommands = Set[String]("SET")
+    final val compulsoryWrite = Set[String]("REPLCONF")
     final var totalBytesProcessed: Long = 0
 
     // Helper to convert glob input into compatible regex
@@ -52,7 +52,7 @@ class EventProcessor(
     }
 
     private def writeToOutput(data: Array[Byte], command: String): Unit = {
-        if (!writeToOutput && writeCommands.contains(command)) {
+        if (!writeToOutput && !compulsoryWrite.contains(command)) {
             return;
         }
         
