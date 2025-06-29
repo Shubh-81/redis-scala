@@ -263,7 +263,7 @@ object Server {
 
             loadFromBytes(fileBytes.toArray)
 
-            val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams)
+            val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams, writeToOutput = false)
             var command: ArrayBuffer[String] = ArrayBuffer[String]()
             var idx = 0
             var len = 0
