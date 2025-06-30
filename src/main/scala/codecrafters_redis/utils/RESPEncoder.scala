@@ -44,4 +44,8 @@ class RESPEncoder {
         val len = binaryString.length()
         return s"${binaryString}"
     }
+
+    def encodeInteger(input: Int): String = {
+        return s":${input}\r\n"
+    }
 }

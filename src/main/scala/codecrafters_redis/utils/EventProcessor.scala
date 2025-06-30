@@ -79,6 +79,7 @@ class EventProcessor(
             case "INFO" => process_info(event)
             case "REPLCONF" => process_replconf(event)
             case "PSYNC" => process_psync(event)
+            case "WAIT" => process_wait(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -243,5 +244,13 @@ class EventProcessor(
         val bytes = Files.readAllBytes(file.toPath)
         writeToOutput(s"$$${bytes.length}\r\n".getBytes(), event(0))
         writeToOutput(bytes, event(0))
+    }
+
+    private def process_wait(event: Array[String]): Unit = {
+        if (event.length != 3) {
+            throw new Exception("Invalid Inputs, required: WAIT 0 60000")
+        }
+
+        writeToOutput(respEncoder.encodeInteger(0).getBytes(), event(0))
     }
 }
