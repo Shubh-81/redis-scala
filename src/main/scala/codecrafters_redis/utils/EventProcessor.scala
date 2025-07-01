@@ -251,6 +251,6 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: WAIT 0 60000")
         }
 
-        writeToOutput(respEncoder.encodeInteger(0).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeInteger(slaveOutputStreams.size).getBytes(), event(0))
     }
 }
