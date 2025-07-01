@@ -29,6 +29,7 @@ class EventProcessor(
     final val respEncoder = new RESPEncoder()
     final val compulsoryWrite = Set[String]("REPLCONF")
     final var totalBytesProcessed: Long = 0
+    final var numReplicasWrite: Int = 0
 
     // Helper to convert glob input into compatible regex
     private def glob_to_regex(glob: String): String = {
@@ -87,8 +88,14 @@ class EventProcessor(
     }
 
     private def propogate_command(event: Array[String]): Unit = {
+        numReplicasWrite = 0
         for (slaveOutputStream <- slaveOutputStreams) {
-            slaveOutputStream.write(respEncoder.encodeArray(event).getBytes())
+            try {
+                slaveOutputStream.write(respEncoder.encodeArray(event).getBytes())
+                numReplicasWrite += 1
+            } catch {
+                case e: Exception => println(s"Error while writing to replica: ${e.getMessage()}")
+            }
         }
     }
 
@@ -249,6 +256,14 @@ class EventProcessor(
     private def process_wait(event: Array[String]): Unit = {
         if (event.length != 3) {
             throw new Exception("Invalid Inputs, required: WAIT 0 60000")
+        }
+
+        val requiredReplicas = event(1).toInt
+        val requiredTimeout = event(2).toLong
+
+        val start = System.currentTimeMillis()
+        while (numReplicasWrite < requiredReplicas && (System.currentTimeMillis() - start) < requiredTimeout) {
+            Thread.sleep(10)
         }
 
         writeToOutput(respEncoder.encodeInteger(slaveOutputStreams.size).getBytes(), event(0))
