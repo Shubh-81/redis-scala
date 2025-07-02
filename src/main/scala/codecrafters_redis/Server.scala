@@ -25,6 +25,8 @@ import codecrafters_redis.utils.RESPDecoder
 import scala.util.Random
 import codecrafters_redis.utils.EventProcessor
 import scala.collection.mutable.Set
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 case class Event(eventProcessor: EventProcessor, message: ArrayBuffer[String])
 case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
@@ -40,6 +42,8 @@ object Server {
     final var slavePorts = Set[Int]()
     final var slaveOutputStreams = Set[OutputStream]()
     final val q: BlockingQueue[Event] = new LinkedBlockingQueue[Event]()
+    final var numReplicasWrite = new AtomicInteger(0)
+    final var unprocessedWrite = new AtomicBoolean(false)
 
     private def startScheduledSaveState(): Unit = {
         scheduler.scheduleAtFixedRate(
@@ -263,7 +267,7 @@ object Server {
 
             loadFromBytes(fileBytes.toArray)
 
-            val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams, writeToOutput = false)
+            val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite)
             var command: ArrayBuffer[String] = ArrayBuffer[String]()
             var idx = 0
             var len = 0
@@ -370,39 +374,56 @@ object Server {
         while (true) {
             val clientSocket = serverSocket.accept()
             val thread = new Thread(() => {
-                Using.resources(clientSocket.getInputStream(), clientSocket.getOutputStream()) { (is, os) =>
-                    val reader = new BufferedReader(new InputStreamReader(is));
-                    val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams)
-                    var command: ArrayBuffer[String] = ArrayBuffer[String]()
-                    var idx = 0
-                    var len = 0
+                try {
+                    Using.resources(clientSocket.getOutputStream(), new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) { (os, reader) =>
+                        val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite)
+                        var command: ArrayBuffer[String] = ArrayBuffer[String]()
+                        var idx = 0
+                        var len = 0
 
-                    reader.lines().forEach { line =>
-                        if (line.startsWith("*") && idx >= (2 * len)) {
-                            len = Integer.parseInt(line.substring(1))
-                            idx = 0
+                        var line: String = null
+                        while ({
+                            line = reader.readLine()
+                            line != null
+                        }) {
+                            if (line.startsWith("*") && idx >= (2 * len)) {
+                                len = Integer.parseInt(line.substring(1))
+                                idx = 0
 
-                            command = ArrayBuffer[String]()
-                        } else {
-                            if (idx % 2 == 0) {
-                                idx += 1
+                                command = ArrayBuffer[String]()
                             } else {
-                                command += line
-                                idx += 1
+                                if (idx % 2 == 0) {
+                                    idx += 1
+                                } else {
+                                    command += line
+                                    idx += 1
 
-                                if (idx == 2 * len) {
-                                    println(s"command: ${command}")
-                                    q.offer(new Event(eventProcessor, command))
+                                    if (idx == 2 * len) {
+                                        println(s"command: ${command}")
+                                        try {
+                                            eventProcessor.process_event(command.toArray)
+                                        } catch {
+                                            case e: Exception => println(s"Error while processing event: ${e.getMessage()}")
+                                        }
+                                        
+                                    }
                                 }
                             }
                         }
                     }
-                }
+                    } catch {
+                        case e: Exception => { 
+                            println(s"Error in thread: ${Thread.currentThread()}, error: ${e.getMessage()}")
+                            e.printStackTrace()
+                        }
+                    }
             })
             thread.start()   
+            threads += thread
         }
 
         workerThread.join()
+        for (thread <- threads) thread.join()
     }
 
     private def parseArguments(args: Array[String]): Map[String, String] = {

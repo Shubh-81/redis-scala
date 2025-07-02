@@ -16,6 +16,8 @@ import scala.annotation.switch
 import scala.collection.mutable.Set
 import java.net.Socket
 import java.io.PrintStream
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 class EventProcessor(
     val outputStream: Option[OutputStream],
@@ -23,13 +25,18 @@ class EventProcessor(
     val config: Config,
     val slavePorts: Set[Int],
     val slaveOutputStreams: Set[OutputStream],
-    val writeToOutput: Boolean = true
+    val writeToOutput: Boolean = true,
+    val numReplicasWrite: AtomicInteger,
+    val unprocessedWrite: AtomicBoolean
 ) {
 
     final val respEncoder = new RESPEncoder()
     final val compulsoryWrite = Set[String]("REPLCONF")
     final var totalBytesProcessed: Long = 0
-    final var numReplicasWrite: Int = 0
+
+    def start_processing(): Unit = {
+
+    }
 
     // Helper to convert glob input into compatible regex
     private def glob_to_regex(glob: String): String = {
@@ -58,7 +65,13 @@ class EventProcessor(
         }
         
         outputStream match {
-            case Some(os) => os.write(data)
+            case Some(os) => {
+                try {
+                    os.write(data)
+                } catch {
+                    case e: Exception => println(s"Error when outputing command: ${command}, error: ${e.getMessage()}")
+                }
+            }
             case _ => // Do nothing
         }
     }
@@ -88,11 +101,9 @@ class EventProcessor(
     }
 
     private def propogate_command(event: Array[String]): Unit = {
-        numReplicasWrite = 0
         for (slaveOutputStream <- slaveOutputStreams) {
             try {
                 slaveOutputStream.write(respEncoder.encodeArray(event).getBytes())
-                numReplicasWrite += 1
             } catch {
                 case e: Exception => println(s"Error while writing to replica: ${e.getMessage()}")
             }
@@ -130,6 +141,7 @@ class EventProcessor(
         cache.put(key, new CacheElement(value, exp, LocalDateTime.now()))
 
         writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+        unprocessedWrite.set(true)
         if (config.role == "master")    propogate_command(event)
     }
 
@@ -232,6 +244,12 @@ class EventProcessor(
                 writeToOutput(respEncoder.encodeArray(Array("REPLCONF", "ACK", totalBytesProcessed.toString)).getBytes(), event(0))
                 return
             }
+            case "ACK" => {
+                println(s"Sent ack: ${numReplicasWrite.get()}")
+                numReplicasWrite.incrementAndGet()
+                println(s"Recieved ack: ${numReplicasWrite.get()}, ${System.currentTimeMillis()}")
+                return
+            }
             case _ => {
                 writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
             }
@@ -261,11 +279,16 @@ class EventProcessor(
         val requiredReplicas = event(1).toInt
         val requiredTimeout = event(2).toLong
 
+        numReplicasWrite.set(0)
+        if (unprocessedWrite.get()) propogate_command(Array("REPLCONF", "GETACK", "*"))
+        else    numReplicasWrite.set(slaveOutputStreams.size)
+
         val start = System.currentTimeMillis()
-        while (numReplicasWrite < requiredReplicas && (System.currentTimeMillis() - start) < requiredTimeout) {
+        while (numReplicasWrite.get() < requiredReplicas && (System.currentTimeMillis() - start) < requiredTimeout) {
             Thread.sleep(10)
         }
-
-        writeToOutput(respEncoder.encodeInteger(slaveOutputStreams.size).getBytes(), event(0))
+        println("time: ", System.currentTimeMillis())
+        println("Time taken: ", (System.currentTimeMillis() - start))
+        writeToOutput(respEncoder.encodeInteger(numReplicasWrite.get()).getBytes(), event(0))
     }
 }
