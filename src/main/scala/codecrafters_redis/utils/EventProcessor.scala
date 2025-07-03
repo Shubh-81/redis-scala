@@ -443,12 +443,20 @@ class EventProcessor(
         var start = event(2)
         var end = event(3)
 
-        if (!start.contains("-")) {
+        if (start != "-" && !start.contains("-")) {
             start += "-0"
         }
 
-        if (!end.contains("-")) {
+        if (start == "-") {
+            start = "0-0"
+        }
+
+        if (end != "+" && !end.contains("-")) {
             end += "-0"
+        }
+
+        if (end == "+") {
+            end = s"${Long.MaxValue}-${Int.MaxValue}"
         }
 
         val resultMap = find_stream_enteries(key, start, end)
