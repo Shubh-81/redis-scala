@@ -402,6 +402,6 @@ class EventProcessor(
             idx = idx + 2
         }
 
-        writeToOutput(respEncoder.encodeSimpleString(currentKey).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeBulkString(currentKey).getBytes(), event(0))
     }
 }
