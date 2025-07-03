@@ -112,6 +112,9 @@ class EventProcessor(
                             }
                         }
 
+                        if (time == "0" && maxIdx == -1) {
+                            return s"${time}-1"
+                        }
                         return s"${time}-${maxIdx + 1}"
                     }
                     case _ => {
