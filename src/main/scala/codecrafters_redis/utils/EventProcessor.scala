@@ -297,7 +297,7 @@ class EventProcessor(
 
         val key = event(1)
         if (cache.containsKey(key)) {
-            writeToOutput(respEncoder.encodeSimpleString("string").getBytes(), event(0))
+            writeToOutput(respEncoder.encodeSimpleString(cache.get(key).valueType).getBytes(), event(0))
         } else {
             writeToOutput(respEncoder.encodeSimpleString("none").getBytes(), event(0))
         }
