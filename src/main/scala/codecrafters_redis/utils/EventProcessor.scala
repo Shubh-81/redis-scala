@@ -94,6 +94,7 @@ class EventProcessor(
             case "REPLCONF" => process_replconf(event)
             case "PSYNC" => process_psync(event)
             case "WAIT" => process_wait(event)
+            case "TYPE" => process_type(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -290,5 +291,18 @@ class EventProcessor(
         println("time: ", System.currentTimeMillis())
         println("Time taken: ", (System.currentTimeMillis() - start))
         writeToOutput(respEncoder.encodeInteger(numReplicasWrite.get()).getBytes(), event(0))
+    }
+
+    private def process_type(event: Array[String]): Unit = {
+        if (event.length != 2) {
+            throw new Exception("Invalid Inputs, required: EVENT <key>")
+        }
+
+        val key = event(1)
+        if (cache.containsKey(key)) {
+            writeToOutput(respEncoder.encodeSimpleString("string").getBytes(), event(0))
+        } else {
+            writeToOutput(respEncoder.encodeSimpleString("none").getBytes(), event(0))
+        }
     }
 }
