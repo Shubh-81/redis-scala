@@ -469,10 +469,23 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: XREAD streams <stream_key> <id>")
         }
 
+        var idx = 2
+
+        if (event(2) == "block") {
+            val timeOut = event(3).toLong
+            val start = System.currentTimeMillis()
+
+            while ((System.currentTimeMillis() - start) < timeOut) {
+                Thread.sleep(5)
+            }
+
+            idx = 4
+        }
+
         val resMap = new ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]()
         val numStreams = (event.length - 2) / 2
 
-        var idx = 2
+        
         while ((idx + numStreams) < event.length) {
             var start: String = event(idx + numStreams)
             if (start != "-" && !start.contains("-")) {
