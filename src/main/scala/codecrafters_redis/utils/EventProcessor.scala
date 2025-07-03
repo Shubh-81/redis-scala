@@ -111,7 +111,8 @@ class EventProcessor(
                                 maxIdx = Math.max(keyIdx, maxIdx)
                             }
                         }
-
+                        println(s"time: ${time.toLong}")
+                        println(s"maxIdx: ${maxIdx}")
                         if (time.toLong == 0 && maxIdx == -1) {
                             return s"${time}-1"
                         }
