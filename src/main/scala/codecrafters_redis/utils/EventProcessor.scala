@@ -118,6 +118,9 @@ class EventProcessor(
                         return s"${time}-${maxIdx + 1}"
                     }
                     case _ => {
+                        if (!streamCache.containsKey(streamKey)) {
+                            return currentKey
+                        }
                         val keyIterator = streamCache.get(streamKey).keySet().iterator()
                         while (keyIterator.hasNext()) {
                             val key = keyIterator.next()
