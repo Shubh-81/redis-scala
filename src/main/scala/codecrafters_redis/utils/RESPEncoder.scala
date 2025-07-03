@@ -79,4 +79,19 @@ class RESPEncoder {
 
         return res
     }
+
+    def encodeStreams(input: ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]): String = {
+         var res = s"*${input.size}\r\n"
+
+        val entryIterator = input.entrySet().iterator()
+        while (entryIterator.hasNext) {
+            val entry = entryIterator.next()
+
+            res += "*2\r\n"
+            res += encodeSimpleString(entry.getKey())
+            res += encodeStream(entry.getValue())
+        }
+
+        return res
+    }
 }

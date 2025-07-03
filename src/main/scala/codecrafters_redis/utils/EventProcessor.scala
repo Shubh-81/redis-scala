@@ -193,6 +193,7 @@ class EventProcessor(
             case "TYPE" => process_type(event)
             case "XADD" => process_xadd(event)
             case "XRANGE" => process_xrange(event)
+            case "XREAD" => process_xread(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -461,5 +462,35 @@ class EventProcessor(
 
         val resultMap = find_stream_enteries(key, start, end)
         writeToOutput(respEncoder.encodeStream(resultMap).getBytes(), event(0))
+    }
+
+    private def process_xread(event: Array[String]): Unit = {
+        if (event.length < 4 || event.length % 2 != 0) {
+            throw new Exception("Invalid Inputs, required: XREAD streams <stream_key> <id>")
+        }
+
+        val resMap = new ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]()
+        val numStreams = (event.length - 2) / 2
+
+        var idx = 2
+        while ((idx + numStreams) < event.length) {
+            var start: String = event(idx + numStreams)
+            if (start != "-" && !start.contains("-")) {
+                start += "-0"
+            }
+
+            if (start == "-") {
+                start = "0-0"
+            }
+
+            val time = start.split("-")(0)
+            val currIdx = start.split("-")(1).toInt
+            val currMap = find_stream_enteries(event(idx), s"${time}-${currIdx + 1}", s"${Long.MaxValue}-${Int.MaxValue}")
+
+            resMap.put(event(idx), currMap)
+            idx += 1
+        }
+
+        writeToOutput(respEncoder.encodeStreams(resMap).getBytes(), event(0))
     }
 }
