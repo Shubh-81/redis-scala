@@ -92,6 +92,9 @@ class EventProcessor(
                 idx match {
                     case "*" => {
                         if (!streamCache.containsKey(streamKey)) {
+                            if (time.toLong == 0) {
+                                return s"${time}-1"
+                            }
                             return s"${time}-0"
                         }
 
@@ -111,11 +114,7 @@ class EventProcessor(
                                 maxIdx = Math.max(keyIdx, maxIdx)
                             }
                         }
-                        println(s"time: ${time.toLong}")
-                        println(s"maxIdx: ${maxIdx}")
-                        if (time.toLong == 0 && maxIdx == -1) {
-                            return s"${time}-1"
-                        }
+
                         return s"${time}-${maxIdx + 1}"
                     }
                     case _ => {
