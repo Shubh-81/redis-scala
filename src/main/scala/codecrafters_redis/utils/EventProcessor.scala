@@ -373,10 +373,6 @@ class EventProcessor(
         val streamKey = event(1)
         val currentKey = validate_stream_key(streamKey, event(2))
 
-        if (currentKey == "0-0") {
-            throw new Exception("ERR The ID specified in XADD must be greater than 0-0")
-        }
-
         if (!cache.containsKey(streamKey)) {
             cache.put(streamKey, new CacheElement("", "stream", None, LocalDateTime.now()))
         }
