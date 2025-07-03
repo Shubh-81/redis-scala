@@ -76,6 +76,24 @@ class EventProcessor(
         }
     }
 
+    private def validate_stream_key(streamKey: String, currentKey: String): Boolean = {
+        val time = currentKey.split("-")(0).toLong
+        val idx = currentKey.split("-")(1).toInt
+
+        val keyIterator = streamCache.get(streamKey).keySet().iterator()
+        while (keyIterator.hasNext) {
+            val key = keyIterator.next()
+
+            val keyTime = key.split("-")(0).toLong
+            val keyIdx = key.split("-")(1).toInt
+
+            if (time < keyTime) return false
+            if (time == keyTime && keyIdx >= idx)   return false
+        }
+
+        return true
+    }
+
     def process_event(event: Array[String]): Unit = {
         if (event.length == 0) {
             throw new Exception("Empty event")
@@ -311,6 +329,10 @@ class EventProcessor(
         val streamKey = event(1)
         val currentKey = event(2)
 
+        if (currentKey == "0-0") {
+            throw new Exception("ERR The ID specified in XADD must be greater than 0-0")
+        }
+
         if (!cache.containsKey(streamKey)) {
             cache.put(streamKey, new CacheElement("", "stream", None, LocalDateTime.now()))
         }
@@ -322,6 +344,10 @@ class EventProcessor(
 
         if (!streamCache.containsKey(streamKey)) {
             streamCache.put(streamKey, new ConcurrentHashMap())
+        }
+
+        if (!validate_stream_key(streamKey, currentKey)) {
+            throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
         }
 
         if (!streamCache.get(streamKey).contains(currentKey)) {

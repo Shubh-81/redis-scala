@@ -403,7 +403,10 @@ object Server {
                                         try {
                                             eventProcessor.process_event(command.toArray)
                                         } catch {
-                                            case e: Exception => println(s"Error while processing event: ${e.getMessage()}")
+                                            case e: Exception => {
+                                                println(s"Error while processing event: ${e.getMessage()}")
+                                                os.write(respEncoder.encodeSimpleError(e.getMessage()).getBytes())
+                                            }
                                         }
                                         
                                     }

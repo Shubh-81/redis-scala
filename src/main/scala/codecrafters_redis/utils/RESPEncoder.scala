@@ -48,4 +48,8 @@ class RESPEncoder {
     def encodeInteger(input: Int): String = {
         return s":${input}\r\n"
     }
+
+    def encodeSimpleError(error: String): String = {
+        return s"-${error}\r\n"
+    }
 }
