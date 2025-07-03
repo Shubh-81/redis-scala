@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class EventProcessor(
     val outputStream: Option[OutputStream],
     val cache: ConcurrentHashMap[String, CacheElement],
+    val streamCache: ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]],
     val config: Config,
-    val slavePorts: Set[Int],
     val slaveOutputStreams: Set[OutputStream],
     val writeToOutput: Boolean = true,
     val numReplicasWrite: AtomicInteger,
@@ -95,6 +95,7 @@ class EventProcessor(
             case "PSYNC" => process_psync(event)
             case "WAIT" => process_wait(event)
             case "TYPE" => process_type(event)
+            case "XADD" => process_xadd(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -139,7 +140,7 @@ class EventProcessor(
 
         val key = event(1)
         val value = event(2)
-        cache.put(key, new CacheElement(value, exp, LocalDateTime.now()))
+        cache.put(key, new CacheElement(value, "string", exp, LocalDateTime.now()))
 
         writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
         unprocessedWrite.set(true)
@@ -227,11 +228,7 @@ class EventProcessor(
         event(1) match {
             case "listening-port" => {
                 try {
-                    val slavePort = event(2).toInt
-                    slavePorts += slavePort
-
                     slaveOutputStreams += outputStream.get
-
                     writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
                 } catch {
                     case e: Exception => {
@@ -295,7 +292,7 @@ class EventProcessor(
 
     private def process_type(event: Array[String]): Unit = {
         if (event.length != 2) {
-            throw new Exception("Invalid Inputs, required: EVENT <key>")
+            throw new Exception("Invalid Inputs, required: TYPE <key>")
         }
 
         val key = event(1)
@@ -304,5 +301,39 @@ class EventProcessor(
         } else {
             writeToOutput(respEncoder.encodeSimpleString("none").getBytes(), event(0))
         }
+    }
+
+    private def process_xadd(event: Array[String]): Unit = {
+        if (event.length < 5 || event.length % 2 == 0) {
+            throw new Exception("Invalid Inputs, required: XADD <stream-key> <current-key> key value")
+        }
+
+        val streamKey = event(1)
+        val currentKey = event(2)
+
+        if (!cache.containsKey(streamKey)) {
+            cache.put(streamKey, new CacheElement("", "stream", None, LocalDateTime.now()))
+        }
+
+        if (cache.get(streamKey).valueType != "stream") {
+            writeToOutput(respEncoder.encodeSimpleString("-1").getBytes(), event(0))
+            return
+        }
+
+        if (!streamCache.containsKey(streamKey)) {
+            streamCache.put(streamKey, new ConcurrentHashMap())
+        }
+
+        if (!streamCache.get(streamKey).contains(currentKey)) {
+            streamCache.get(streamKey).put(currentKey, new ConcurrentHashMap())
+        }
+
+        var idx = 3
+        while (idx < event.length) {
+            streamCache.get(streamKey).get(currentKey).put(event(idx), event(idx + 1))
+            idx = idx + 2
+        }
+
+        writeToOutput(respEncoder.encodeSimpleString(currentKey).getBytes(), event(0))
     }
 }

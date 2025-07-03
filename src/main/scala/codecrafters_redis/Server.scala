@@ -29,17 +29,17 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 
 case class Event(eventProcessor: EventProcessor, message: ArrayBuffer[String])
-case class CacheElement(value: String, expiry: Option[Long], setAt: LocalDateTime)
+case class CacheElement(value: String, valueType: String = "string", expiry: Option[Long], setAt: LocalDateTime)
 case class Config(dir: String, dbFileName: String, role: String, master_replid: String, master_repl_offset: Long, master_host: String, master_port: Int, port: Int, host: String)
 
 object Server {
     
     final val cache = new ConcurrentHashMap[String, CacheElement]()
+    final val streamCache = new ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]()
     final var config = new Config("", "", "master", Random.alphanumeric.take(40).mkString, 0, "", 6379, 6379, "")
     final val respEncoder = new RESPEncoder()
     final val respDecoder = new RESPDecoder()
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
-    final var slavePorts = Set[Int]()
     final var slaveOutputStreams = Set[OutputStream]()
     final val q: BlockingQueue[Event] = new LinkedBlockingQueue[Event]()
     final var numReplicasWrite = new AtomicInteger(0)
@@ -176,7 +176,7 @@ object Server {
                 val (value, newIndex3) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex3
 
-                cache.put(key, new CacheElement(value, Some(expiry), setAt))
+                cache.put(key, new CacheElement(value, "string", Some(expiry), setAt))
             }
             else if ((bytes(idx).toLong & 0xFF) == 0x00 && totalCount > 0) {
                 idx += 1
@@ -188,7 +188,7 @@ object Server {
                 val (value, newIndex2) = rdbDecoder.string_decoder(bytes, idx)
                 idx = newIndex2
 
-                cache.put(key, new CacheElement(value, None, LocalDateTime.now()))
+                cache.put(key, new CacheElement(value, "string", None, LocalDateTime.now()))
             } else {
                 idx+=1
             }
@@ -267,7 +267,7 @@ object Server {
 
             loadFromBytes(fileBytes.toArray)
 
-            val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite)
+            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite)
             var command: ArrayBuffer[String] = ArrayBuffer[String]()
             var idx = 0
             var len = 0
@@ -376,7 +376,7 @@ object Server {
             val thread = new Thread(() => {
                 try {
                     Using.resources(clientSocket.getOutputStream(), new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) { (os, reader) =>
-                        val eventProcessor = new EventProcessor(Some(os), cache, config, slavePorts, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite)
+                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite)
                         var command: ArrayBuffer[String] = ArrayBuffer[String]()
                         var idx = 0
                         var len = 0
