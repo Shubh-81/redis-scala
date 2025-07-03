@@ -76,70 +76,70 @@ class EventProcessor(
         }
     }
 
-    private def validate_stream_key(streamKey: String, currentKey: String): String = {
-        val time = currentKey.split("-")(0)
-        val idx = currentKey.split("-")(1)
+    private def validate_stream_key(streamKey: String, current: String): String = {
+        var currentKey = current
 
         if (currentKey == "0-0") {
             throw new Exception("ERR The ID specified in XADD must be greater than 0-0")
         }
 
-        time match {
+        if (currentKey == "*") {
+            val currentTime = System.currentTimeMillis()
+            currentKey = s"${currentTime}-*"
+        }
+        println(s"currentKey: ${currentKey}")
+        val time = currentKey.split("-")(0)
+        val idx = currentKey.split("-")(1)
+
+        idx match {
             case "*" => {
-                return currentKey
-            }
-            case _ => {
-                idx match {
-                    case "*" => {
-                        if (!streamCache.containsKey(streamKey)) {
-                            if (time.toLong == 0) {
-                                return s"${time}-1"
-                            }
-                            return s"${time}-0"
-                        }
-
-                        var maxIdx = -1
-                        val keyIterator = streamCache.get(streamKey).keySet().iterator()
-                        while (keyIterator.hasNext) {
-                            val key = keyIterator.next()
-
-                            val keyTime = key.split("-")(0).toLong
-                            val keyIdx = key.split("-")(1).toInt
-
-                            if (keyTime > time.toLong) {
-                                throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
-                            }
-
-                            if (keyTime == time.toLong) {
-                                maxIdx = Math.max(keyIdx, maxIdx)
-                            }
-                        }
-
-                        return s"${time}-${maxIdx + 1}"
+                if (!streamCache.containsKey(streamKey)) {
+                    if (time.toLong == 0) {
+                        return s"${time}-1"
                     }
-                    case _ => {
-                        if (!streamCache.containsKey(streamKey)) {
-                            return currentKey
-                        }
-                        val keyIterator = streamCache.get(streamKey).keySet().iterator()
-                        while (keyIterator.hasNext()) {
-                            val key = keyIterator.next()
+                    return s"${time}-0"
+                }
 
-                            val keyTime = key.split("-")(0).toLong
-                            val keyIdx = key.split("-")(1).toInt
+                var maxIdx = -1
+                val keyIterator = streamCache.get(streamKey).keySet().iterator()
+                while (keyIterator.hasNext) {
+                    val key = keyIterator.next()
 
-                            if (keyTime > time.toLong) {
-                                throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
-                            }
+                    val keyTime = key.split("-")(0).toLong
+                    val keyIdx = key.split("-")(1).toInt
 
-                            if (keyTime == time.toLong && keyIdx >= idx.toInt) {
-                                throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
-                            }
-                        }
+                    if (keyTime > time.toLong) {
+                        throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+                    }
 
-                        return currentKey
+                    if (keyTime == time.toLong) {
+                        maxIdx = Math.max(keyIdx, maxIdx)
                     }
                 }
+
+                return s"${time}-${maxIdx + 1}"
+            }
+            case _ => {
+                if (!streamCache.containsKey(streamKey)) {
+                    return currentKey
+                }
+                val keyIterator = streamCache.get(streamKey).keySet().iterator()
+                while (keyIterator.hasNext()) {
+                    val key = keyIterator.next()
+
+                    val keyTime = key.split("-")(0).toLong
+                    val keyIdx = key.split("-")(1).toInt
+
+                    if (keyTime > time.toLong) {
+                        throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+                    }
+
+                    if (keyTime == time.toLong && keyIdx >= idx.toInt) {
+                        throw new Exception("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+                    }
+                }
+
+                return currentKey
             }
         }
     }
