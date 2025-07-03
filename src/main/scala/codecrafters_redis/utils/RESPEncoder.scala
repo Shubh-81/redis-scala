@@ -2,6 +2,8 @@ package codecrafters_redis.utils
 
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentHashMap
+import scala.collection.mutable.ArrayBuffer
 
 class RESPEncoder {
 
@@ -51,5 +53,30 @@ class RESPEncoder {
 
     def encodeSimpleError(error: String): String = {
         return s"-${error}\r\n"
+    }
+
+    def encodeStream(input: ConcurrentHashMap[String, ConcurrentHashMap[String, String]]): String = {
+        var res = s"*${input.size}\r\n"
+
+        val entryIterator = input.entrySet().iterator()
+        while (entryIterator.hasNext) {
+            val entry = entryIterator.next()
+
+            res += "*2\r\n"
+            res += encodeSimpleString(entry.getKey())
+
+            val mapArray = ArrayBuffer[String]()
+            
+            val subMapIterator = entry.getValue().entrySet().iterator()
+            while (subMapIterator.hasNext()) {
+                val subEntry = subMapIterator.next()
+                mapArray += subEntry.getKey()
+                mapArray += subEntry.getValue()
+            }
+
+            res += encodeArray(mapArray.toArray)
+        }
+
+        return res
     }
 }

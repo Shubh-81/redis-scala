@@ -386,7 +386,6 @@ object Server {
                             line = reader.readLine()
                             line != null
                         }) {
-                            println(s"line: ${line}")
                             if (idx >= (2 * len)) {
                                 len = Integer.parseInt(line.substring(1))
                                 idx = 0

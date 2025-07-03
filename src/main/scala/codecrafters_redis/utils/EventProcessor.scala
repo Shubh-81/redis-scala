@@ -144,6 +144,34 @@ class EventProcessor(
         }
     }
 
+    private def find_stream_enteries(key: String, start: String, end: String): ConcurrentHashMap[String, ConcurrentHashMap[String, String]] = {
+        var resultMap = new ConcurrentHashMap[String, ConcurrentHashMap[String, String]]()
+
+        if (!streamCache.containsKey(key)) {
+            return resultMap
+        }
+
+        val startTime = start.split("-")(0).toLong
+        val startIdx = start.split("-")(1).toInt
+
+        val endTime = end.split("-")(0).toLong
+        val endIdx = end.split("-")(1).toInt
+
+        val entryIterator = streamCache.get(key).entrySet().iterator()
+        while (entryIterator.hasNext) {
+            val entry = entryIterator.next()
+
+            val currTime = entry.getKey().split("-")(0).toLong
+            val currIdx = entry.getKey().split("-")(1).toInt
+
+            if ((currTime > startTime || (currTime == startTime && currIdx >= startIdx)) && (currTime < endTime || (currTime == endTime && currIdx <= endIdx))) {
+                resultMap.put(entry.getKey(), entry.getValue())
+            }
+        }
+
+        return resultMap
+    }
+
     def process_event(event: Array[String]): Unit = {
         if (event.length == 0) {
             throw new Exception("Empty event")
@@ -164,6 +192,7 @@ class EventProcessor(
             case "WAIT" => process_wait(event)
             case "TYPE" => process_type(event)
             case "XADD" => process_xadd(event)
+            case "XRANGE" => process_xrange(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -403,5 +432,26 @@ class EventProcessor(
         }
 
         writeToOutput(respEncoder.encodeBulkString(currentKey).getBytes(), event(0))
+    }
+
+    private def process_xrange(event: Array[String]): Unit = {
+        if (event.length != 4) {
+            throw new Exception("Invalid Inputs, required: XRANGE <key> <start> <end>")
+        }
+
+        val key = event(1)
+        var start = event(2)
+        var end = event(3)
+
+        if (!start.contains("-")) {
+            start += "-0"
+        }
+
+        if (!end.contains("-")) {
+            end += "-0"
+        }
+
+        val resultMap = find_stream_enteries(key, start, end)
+        writeToOutput(respEncoder.encodeStream(resultMap).getBytes(), event(0))
     }
 }
