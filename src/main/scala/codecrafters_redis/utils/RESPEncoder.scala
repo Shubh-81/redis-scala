@@ -87,15 +87,22 @@ class RESPEncoder {
             return encodeSimpleString("-1")
         }
 
+        var isEmpty = true
         val entryIterator = input.entrySet().iterator()
         while (entryIterator.hasNext) {
             val entry = entryIterator.next()
+            if (entry.getValue().size > 0) {
+                isEmpty = false
+            }
 
             res += "*2\r\n"
             res += encodeSimpleString(entry.getKey())
             res += encodeStream(entry.getValue())
         }
 
+        if (isEmpty) {
+            return encodeBulkString("")
+        }
         return res
     }
 }

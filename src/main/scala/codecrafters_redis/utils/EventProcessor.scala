@@ -499,8 +499,7 @@ class EventProcessor(
 
             val time = start.split("-")(0)
             val currIdx = start.split("-")(1).toInt
-            println(s"currentKey: ${time}-${currIdx + 1}")
-            println(s"streamCache: ", streamCache);
+    
             val currMap = find_stream_enteries(event(idx), s"${time}-${currIdx + 1}", s"${Long.MaxValue}-${Int.MaxValue}")
 
             resMap.put(event(idx), currMap)
