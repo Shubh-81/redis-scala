@@ -18,6 +18,7 @@ import java.net.Socket
 import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class EventProcessor(
     val outputStream: Option[OutputStream],
@@ -27,7 +28,8 @@ class EventProcessor(
     val slaveOutputStreams: Set[OutputStream],
     val writeToOutput: Boolean = true,
     val numReplicasWrite: AtomicInteger,
-    val unprocessedWrite: AtomicBoolean
+    val unprocessedWrite: AtomicBoolean,
+    val lastXADDTime: AtomicLong
 ) {
 
     final val respEncoder = new RESPEncoder()
@@ -180,8 +182,9 @@ class EventProcessor(
 
             val currTime = entry.getKey().split("-")(0).toLong
             val currIdx = entry.getKey().split("-")(1).toInt
-
+            println(s"currTime: ${currTime}, currIdx: ${currIdx}")
             if ((currTime > startTime || (currTime == startTime && currIdx >= startIdx)) && (currTime < endTime || (currTime == endTime && currIdx <= endIdx))) {
+                println(s"entry: ${entry.getKey()}, value: ${entry.getValue()}")
                 resultMap.append(Array(entry.getKey(), hash_map_to_array(entry.getValue())))
             }
         }
@@ -449,6 +452,7 @@ class EventProcessor(
             idx = idx + 2
         }
 
+        lastXADDTime.set(System.currentTimeMillis())
         writeToOutput(respEncoder.encodeBulkString(currentKey).getBytes(), event(0))
     }
 
@@ -493,8 +497,17 @@ class EventProcessor(
             val timeOut = event(2).toLong
             val start = System.currentTimeMillis()
 
-            while ((System.currentTimeMillis() - start) < timeOut) {
-                Thread.sleep(5)
+            if (timeOut == 0) {
+                var len = 0
+                while (start > lastXADDTime.get()) {
+                    println(s"lastXADDTime: ${lastXADDTime.get()}")
+                    Thread.sleep(10)
+                }
+                println(s"streamCache: ${streamCache}")
+            } else {
+                while ((System.currentTimeMillis() - start) < timeOut) {
+                    Thread.sleep(5)
+                }
             }
 
             idx = 4
@@ -515,9 +528,9 @@ class EventProcessor(
 
             val time = start.split("-")(0)
             val currIdx = start.split("-")(1).toInt
-    
+            println(s"key: ${time}-${currIdx + 1}")
             val currMap = find_stream_enteries(event(idx), s"${time}-${currIdx + 1}", s"${Long.MaxValue}-${Int.MaxValue}")
-
+            println(s"currMap: ${currMap}")
             resMap.append(Array(event(idx), currMap))
             if (currMap.length > 0) {
                 isEmpty = false
@@ -529,7 +542,7 @@ class EventProcessor(
             writeToOutput(respEncoder.encodeBulkString("").getBytes(), event(0))
             return
         }
-        
+
         writeToOutput(respEncoder.encodeArray(resMap.toArray).getBytes(), event(0))
     }
 }

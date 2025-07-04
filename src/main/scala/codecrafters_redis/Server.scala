@@ -27,6 +27,7 @@ import codecrafters_redis.utils.EventProcessor
 import scala.collection.mutable.Set
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 case class Event(eventProcessor: EventProcessor, message: ArrayBuffer[String])
 case class CacheElement(value: String, valueType: String = "string", expiry: Option[Long], setAt: LocalDateTime)
@@ -44,6 +45,7 @@ object Server {
     final val q: BlockingQueue[Event] = new LinkedBlockingQueue[Event]()
     final var numReplicasWrite = new AtomicInteger(0)
     final var unprocessedWrite = new AtomicBoolean(false)
+    final var lastXADDTime = new AtomicLong(0)
 
     private def startScheduledSaveState(): Unit = {
         scheduler.scheduleAtFixedRate(
@@ -267,7 +269,7 @@ object Server {
 
             loadFromBytes(fileBytes.toArray)
 
-            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite)
+            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite, lastXADDTime)
             var command: ArrayBuffer[String] = ArrayBuffer[String]()
             var idx = 0
             var len = 0
@@ -376,7 +378,7 @@ object Server {
             val thread = new Thread(() => {
                 try {
                     Using.resources(clientSocket.getOutputStream(), new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) { (os, reader) =>
-                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite)
+                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite, lastXADDTime)
                         var command: ArrayBuffer[String] = ArrayBuffer[String]()
                         var idx = 0
                         var len = 0
