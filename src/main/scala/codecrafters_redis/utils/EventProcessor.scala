@@ -160,6 +160,7 @@ class EventProcessor(
         val entryIterator = streamCache.get(key).entrySet().iterator()
         while (entryIterator.hasNext) {
             val entry = entryIterator.next()
+            println(s"entry: ${entry.getKey()} ${entry.getValue()}")
 
             val currTime = entry.getKey().split("-")(0).toLong
             val currIdx = entry.getKey().split("-")(1).toInt
@@ -470,6 +471,7 @@ class EventProcessor(
         }
 
         var idx = 2
+        var numStreams = (event.length - 2) / 2
 
         if (event(1) == "block") {
             val timeOut = event(2).toLong
@@ -480,11 +482,10 @@ class EventProcessor(
             }
 
             idx = 4
+            numStreams = (event.length - 4) / 2
         }
 
         val resMap = new ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]()
-        val numStreams = (event.length - 2) / 2
-
         
         while ((idx + numStreams) < event.length) {
             var start: String = event(idx + numStreams)
@@ -498,6 +499,8 @@ class EventProcessor(
 
             val time = start.split("-")(0)
             val currIdx = start.split("-")(1).toInt
+            println(s"currentKey: ${time}-${currIdx + 1}")
+            println(s"streamCache: ", streamCache);
             val currMap = find_stream_enteries(event(idx), s"${time}-${currIdx + 1}", s"${Long.MaxValue}-${Int.MaxValue}")
 
             resMap.put(event(idx), currMap)
