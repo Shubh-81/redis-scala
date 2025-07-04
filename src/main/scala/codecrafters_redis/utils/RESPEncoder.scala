@@ -81,7 +81,11 @@ class RESPEncoder {
     }
 
     def encodeStreams(input: ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]): String = {
-         var res = s"*${input.size}\r\n"
+        var res = s"*${input.size}\r\n"
+
+        if (input.size == 0) {
+            return encodeSimpleString("-1")
+        }
 
         val entryIterator = input.entrySet().iterator()
         while (entryIterator.hasNext) {
