@@ -471,8 +471,8 @@ class EventProcessor(
 
         var idx = 2
 
-        if (event(2) == "block") {
-            val timeOut = event(3).toLong
+        if (event(1) == "block") {
+            val timeOut = event(2).toLong
             val start = System.currentTimeMillis()
 
             while ((System.currentTimeMillis() - start) < timeOut) {
