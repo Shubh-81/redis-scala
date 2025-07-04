@@ -144,11 +144,27 @@ class EventProcessor(
         }
     }
 
-    private def find_stream_enteries(key: String, start: String, end: String): ConcurrentHashMap[String, ConcurrentHashMap[String, String]] = {
-        var resultMap = new ConcurrentHashMap[String, ConcurrentHashMap[String, String]]()
+    private def hash_map_to_array(input: ConcurrentHashMap[String, _]): Array[Any] = {
+        val resArray = new ArrayBuffer[Any]()
+        val entryIterator = input.entrySet().iterator()
+        while (entryIterator.hasNext()) {
+            val entry = entryIterator.next()
+            resArray.append(entry.getKey())
+
+            entry.getValue() match {
+                case s: String => resArray.append(s)
+                case map: ConcurrentHashMap[_, _] => resArray.append(hash_map_to_array(map.asInstanceOf[ConcurrentHashMap[String, _]]))
+            }
+        }
+
+        return resArray.toArray
+    }
+
+    private def find_stream_enteries(key: String, start: String, end: String): Array[Any] = {
+        var resultMap = new ArrayBuffer[Any]()
 
         if (!streamCache.containsKey(key)) {
-            return resultMap
+            return resultMap.toArray
         }
 
         val startTime = start.split("-")(0).toLong
@@ -166,11 +182,11 @@ class EventProcessor(
             val currIdx = entry.getKey().split("-")(1).toInt
 
             if ((currTime > startTime || (currTime == startTime && currIdx >= startIdx)) && (currTime < endTime || (currTime == endTime && currIdx <= endIdx))) {
-                resultMap.put(entry.getKey(), entry.getValue())
+                resultMap.append(Array(entry.getKey(), hash_map_to_array(entry.getValue())))
             }
         }
 
-        return resultMap
+        return resultMap.toArray
     }
 
     def process_event(event: Array[String]): Unit = {
@@ -198,13 +214,13 @@ class EventProcessor(
             case _ => throw new Exception("Unsupported command")
         }
 
-        totalBytesProcessed += respEncoder.encodeArray(event).getBytes().length.toLong
+        totalBytesProcessed += respEncoder.encodeArray(event.asInstanceOf[Array[Any]]).getBytes().length.toLong
     }
 
     private def propogate_command(event: Array[String]): Unit = {
         for (slaveOutputStream <- slaveOutputStreams) {
             try {
-                slaveOutputStream.write(respEncoder.encodeArray(event).getBytes())
+                slaveOutputStream.write(respEncoder.encodeArray(event.asInstanceOf[Array[Any]]).getBytes())
             } catch {
                 case e: Exception => println(s"Error while writing to replica: ${e.getMessage()}")
             }
@@ -462,7 +478,7 @@ class EventProcessor(
         }
 
         val resultMap = find_stream_enteries(key, start, end)
-        writeToOutput(respEncoder.encodeStream(resultMap).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeArray(resultMap).getBytes(), event(0))
     }
 
     private def process_xread(event: Array[String]): Unit = {
@@ -485,8 +501,8 @@ class EventProcessor(
             numStreams = (event.length - 4) / 2
         }
 
-        val resMap = new ConcurrentHashMap[String, ConcurrentHashMap[String, ConcurrentHashMap[String, String]]]()
-        
+        val resMap = new ArrayBuffer[Any]
+        var isEmpty = true
         while ((idx + numStreams) < event.length) {
             var start: String = event(idx + numStreams)
             if (start != "-" && !start.contains("-")) {
@@ -502,10 +518,18 @@ class EventProcessor(
     
             val currMap = find_stream_enteries(event(idx), s"${time}-${currIdx + 1}", s"${Long.MaxValue}-${Int.MaxValue}")
 
-            resMap.put(event(idx), currMap)
+            resMap.append(Array(event(idx), currMap))
+            if (currMap.length > 0) {
+                isEmpty = false
+            }
             idx += 1
         }
-
-        writeToOutput(respEncoder.encodeStreams(resMap).getBytes(), event(0))
+        
+        if (isEmpty) {
+            writeToOutput(respEncoder.encodeBulkString("").getBytes(), event(0))
+            return
+        }
+        
+        writeToOutput(respEncoder.encodeArray(resMap.toArray).getBytes(), event(0))
     }
 }

@@ -19,12 +19,15 @@ class RESPEncoder {
         return s"$$${len}\r\n${input}\r\n"
     }
 
-    def encodeArray(input: Array[String]): String = {
+    def encodeArray(input: Array[Any]): String = {
         val len = input.length
 
         var res = s"*${len}\r\n"
         for (curr <- input) {
-            res += encodeBulkString(curr)
+            curr match {
+                case s: String => res += encodeBulkString(s)
+                case arr: Array[Any] => res += encodeArray(arr)
+            }
         }
 
         return res
@@ -53,6 +56,11 @@ class RESPEncoder {
 
     def encodeSimpleError(error: String): String = {
         return s"-${error}\r\n"
+    }
+
+    private def parse_key(key: String): (Long, Int) = {
+        val Array(time, idx) = key.split("-")
+        (time.toLong, idx.toInt)
     }
 
     def encodeStream(input: ConcurrentHashMap[String, ConcurrentHashMap[String, String]]): String = {
