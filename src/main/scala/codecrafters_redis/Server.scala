@@ -28,6 +28,7 @@ import scala.collection.mutable.Set
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 case class Event(eventProcessor: EventProcessor, message: ArrayBuffer[String])
 case class CacheElement(value: String, valueType: String = "string", expiry: Option[Long], setAt: LocalDateTime)
@@ -46,6 +47,7 @@ object Server {
     final var numReplicasWrite = new AtomicInteger(0)
     final var unprocessedWrite = new AtomicBoolean(false)
     final var lastXADDTime = new AtomicLong(0)
+    final var lastXADDId = new AtomicReference[String]("0-0")
 
     private def startScheduledSaveState(): Unit = {
         scheduler.scheduleAtFixedRate(
@@ -269,7 +271,7 @@ object Server {
 
             loadFromBytes(fileBytes.toArray)
 
-            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite, lastXADDTime)
+            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite, lastXADDTime, lastXADDId)
             var command: ArrayBuffer[String] = ArrayBuffer[String]()
             var idx = 0
             var len = 0
@@ -378,7 +380,7 @@ object Server {
             val thread = new Thread(() => {
                 try {
                     Using.resources(clientSocket.getOutputStream(), new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) { (os, reader) =>
-                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite, lastXADDTime)
+                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite, lastXADDTime, lastXADDId)
                         var command: ArrayBuffer[String] = ArrayBuffer[String]()
                         var idx = 0
                         var len = 0

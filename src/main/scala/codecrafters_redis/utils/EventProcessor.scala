@@ -19,6 +19,7 @@ import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class EventProcessor(
     val outputStream: Option[OutputStream],
@@ -29,7 +30,8 @@ class EventProcessor(
     val writeToOutput: Boolean = true,
     val numReplicasWrite: AtomicInteger,
     val unprocessedWrite: AtomicBoolean,
-    val lastXADDTime: AtomicLong
+    val lastXADDTime: AtomicLong,
+    val lastXADDId: AtomicReference[String]
 ) {
 
     final val respEncoder = new RESPEncoder()
@@ -453,6 +455,7 @@ class EventProcessor(
         }
 
         lastXADDTime.set(System.currentTimeMillis())
+        lastXADDId.set(currentKey)
         writeToOutput(respEncoder.encodeBulkString(currentKey).getBytes(), event(0))
     }
 
@@ -493,10 +496,12 @@ class EventProcessor(
         var idx = 2
         var numStreams = (event.length - 2) / 2
 
+        val last = lastXADDId.get()
+
         if (event(1) == "block") {
             val timeOut = event(2).toLong
             val start = System.currentTimeMillis()
-
+            
             if (timeOut == 0) {
                 var len = 0
                 while (start > lastXADDTime.get()) {
@@ -518,12 +523,16 @@ class EventProcessor(
         var isEmpty = true
         while ((idx + numStreams) < event.length) {
             var start: String = event(idx + numStreams)
-            if (start != "-" && !start.contains("-")) {
+            if (start != "$" && start != "-" && !start.contains("-")) {
                 start += "-0"
             }
 
             if (start == "-") {
                 start = "0-0"
+            }
+
+            if (start == "$") {
+                start = last
             }
 
             val time = start.split("-")(0)
