@@ -216,6 +216,7 @@ class EventProcessor(
             case "XADD" => process_xadd(event)
             case "XRANGE" => process_xrange(event)
             case "XREAD" => process_xread(event)
+            case "INCR" => process_incr(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -553,5 +554,27 @@ class EventProcessor(
         }
 
         writeToOutput(respEncoder.encodeArray(resMap.toArray).getBytes(), event(0))
+    }
+
+    private def process_incr(event: Array[String]): Unit = {
+        if (event.length != 2) {
+            throw new Exception("Invalid Inputs, required: INCR <key>")
+        }
+
+        val key = event(1)
+        if (cache.containsKey(key)) {
+            try {
+                val value = cache.get(key).value.toInt + 1
+                cache.put(key, new CacheElement(value.toString, "string", cache.get(key).expiry, cache.get(key).setAt))
+
+                writeToOutput(respEncoder.encodeInteger(value).getBytes(), event(0))
+            } catch {
+                case _: Throwable => throw new Exception("ERR value is not an integer or out of range")
+            }
+        } else {
+            cache.put(key, new CacheElement("1", "string", None, LocalDateTime.now()))
+
+            writeToOutput(respEncoder.encodeInteger(1).getBytes(), event(0))
+        }
     }
 }
