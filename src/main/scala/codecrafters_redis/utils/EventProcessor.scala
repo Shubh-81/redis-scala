@@ -203,7 +203,7 @@ class EventProcessor(
             throw new Exception("Empty event")
         }
 
-        if (multiEnabled.get()) {
+        if (event(0) != "EXEC" && multiEnabled.get()) {
             eventQueue += event
             writeToOutput(respEncoder.encodeSimpleString("QUEUED").getBytes(), "")
             return
