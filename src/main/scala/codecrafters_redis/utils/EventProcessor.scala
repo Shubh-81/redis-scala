@@ -205,6 +205,7 @@ class EventProcessor(
 
         if (multiEnabled) {
             eventQueue += event
+            writeToOutput(respEncoder.encodeSimpleString("QUEUED").getBytes(), "")
             return
         }
 
@@ -227,6 +228,7 @@ class EventProcessor(
             case "XREAD" => process_xread(event)
             case "INCR" => process_incr(event)
             case "MULTI" => process_multi(event)
+            case "EXEC" => process_exec(event)
             case _ => throw new Exception("Unsupported command")
         }
 
