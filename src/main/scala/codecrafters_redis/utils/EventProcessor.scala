@@ -601,6 +601,11 @@ class EventProcessor(
         }
 
         multiEnabled = false
+        if (eventQueue.isEmpty) {
+            writeToOutput(respEncoder.encodeArray(Array()).getBytes(), event(0))
+            return
+        }
+
         while (!eventQueue.isEmpty) {
             val event = eventQueue.dequeue()
             process_event(event)
