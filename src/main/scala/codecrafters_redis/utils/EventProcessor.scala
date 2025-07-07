@@ -217,6 +217,7 @@ class EventProcessor(
             case "XRANGE" => process_xrange(event)
             case "XREAD" => process_xread(event)
             case "INCR" => process_incr(event)
+            case "MULTI" => process_multi(event)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -576,5 +577,9 @@ class EventProcessor(
 
             writeToOutput(respEncoder.encodeInteger(1).getBytes(), event(0))
         }
+    }
+
+    private def process_multi(event: Array[String]): Unit = {
+        writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
     }
 }
