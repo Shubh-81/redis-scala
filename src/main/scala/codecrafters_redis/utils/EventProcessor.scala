@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.Queue
+import scala.collection.mutable
 
 class EventProcessor(
     val outputStream: Option[OutputStream],
@@ -37,6 +39,8 @@ class EventProcessor(
     final val respEncoder = new RESPEncoder()
     final val compulsoryWrite = Set[String]("REPLCONF")
     final var totalBytesProcessed: Long = 0
+    final var multiEnabled: Boolean = false
+    final var eventQueue: mutable.Queue[Array[String]] = mutable.Queue()
 
     def start_processing(): Unit = {
 
@@ -197,6 +201,11 @@ class EventProcessor(
     def process_event(event: Array[String]): Unit = {
         if (event.length == 0) {
             throw new Exception("Empty event")
+        }
+
+        if (multiEnabled) {
+            eventQueue += event
+            return
         }
 
         val command = event(0).toUpperCase()
@@ -580,6 +589,19 @@ class EventProcessor(
     }
 
     private def process_multi(event: Array[String]): Unit = {
+        multiEnabled = true
         writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+    }
+
+    private def process_exec(event: Array[String]): Unit = {
+        if (!multiEnabled) {
+            throw new Exception("ERR EXEC without MULTI")
+        }
+
+        multiEnabled = false
+        while (!eventQueue.isEmpty) {
+            val event = eventQueue.dequeue()
+            process_event(event)
+        }
     }
 }
