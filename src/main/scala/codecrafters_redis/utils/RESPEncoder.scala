@@ -19,14 +19,21 @@ class RESPEncoder {
         return s"$$${len}\r\n${input}\r\n"
     }
 
-    def encodeArray(input: Array[Any]): String = {
+    def encodeArray(input: Array[Any], dataEncoded: Boolean = false): String = {
         val len = input.length
 
         var res = s"*${len}\r\n"
         for (curr <- input) {
-            curr match {
-                case s: String => res += encodeBulkString(s)
-                case arr: Array[Any] => res += encodeArray(arr)
+
+            if (dataEncoded) {
+                curr match {
+                    case s: String => res += s
+                }
+            } else {
+                curr match {
+                    case s: String => res += encodeBulkString(s)
+                    case arr: Array[Any] => res += encodeArray(arr)
+                }
             }
         }
 

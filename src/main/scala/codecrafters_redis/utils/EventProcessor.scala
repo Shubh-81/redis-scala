@@ -41,10 +41,7 @@ class EventProcessor(
     final var totalBytesProcessed: Long = 0
     final var eventQueue: mutable.Queue[Array[String]] = mutable.Queue()
     final var multiEnabled: Boolean = false
-
-    def start_processing(): Unit = {
-
-    }
+    final var execOutput: ArrayBuffer[String] = new ArrayBuffer[String]()
 
     // Helper to convert glob input into compatible regex
     private def glob_to_regex(glob: String): String = {
@@ -67,11 +64,32 @@ class EventProcessor(
         s"^${escaped}$$"
     }
 
-    private def writeToOutput(data: Array[Byte], command: String): Unit = {
+    private def writeToOutput(data: String, command: String, addToArray: Boolean = false): Unit = {
         if (!writeToOutput && !compulsoryWrite.contains(command)) {
             return;
         }
-        
+
+        if (addToArray) {
+            execOutput += data
+            return
+        }
+
+        outputStream match {
+            case Some(os) => {
+                try {
+                    os.write(data.getBytes())
+                } catch {
+                    case e: Exception => println(s"Error when outputing command: ${command}, error: ${e.getMessage()}")
+                }
+            }
+            case _ => // Do nothing
+        }
+    }
+    // For raw bytes (e.g. RDB file transfer)
+    private def writeRawToOutput(data: Array[Byte], command: String): Unit = {
+        if (!writeToOutput && !compulsoryWrite.contains(command)) {
+            return;
+        }
         outputStream match {
             case Some(os) => {
                 try {
@@ -198,37 +216,37 @@ class EventProcessor(
         return resultMap.toArray
     }
 
-    def process_event(event: Array[String]): Unit = {
+    def process_event(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length == 0) {
             throw new Exception("Empty event")
         }
 
         if (event(0) != "EXEC" && multiEnabled) {
             eventQueue += event
-            writeToOutput(respEncoder.encodeSimpleString("QUEUED").getBytes(), "")
+            writeToOutput(respEncoder.encodeSimpleString("QUEUED"), "")
             return
         }
 
         val command = event(0).toUpperCase()
         command match {
-            case "PING" => process_ping(event)
-            case "ECHO" => process_echo(event)
-            case "SET" => process_set(event)
-            case "GET" => process_get(event)
-            case "CONFIG" => process_config(event)
-            case "SAVE" => process_save(event)
-            case "KEYS" => process_keys(event)
-            case "INFO" => process_info(event)
-            case "REPLCONF" => process_replconf(event)
-            case "PSYNC" => process_psync(event)
-            case "WAIT" => process_wait(event)
-            case "TYPE" => process_type(event)
-            case "XADD" => process_xadd(event)
-            case "XRANGE" => process_xrange(event)
-            case "XREAD" => process_xread(event)
-            case "INCR" => process_incr(event)
-            case "MULTI" => process_multi(event)
-            case "EXEC" => process_exec(event)
+            case "PING" => process_ping(event, addToArray)
+            case "ECHO" => process_echo(event, addToArray)
+            case "SET" => process_set(event, addToArray)
+            case "GET" => process_get(event, addToArray)
+            case "CONFIG" => process_config(event, addToArray)
+            case "SAVE" => process_save(event, addToArray)
+            case "KEYS" => process_keys(event, addToArray)
+            case "INFO" => process_info(event, addToArray)
+            case "REPLCONF" => process_replconf(event, addToArray)
+            case "PSYNC" => process_psync(event, addToArray)
+            case "WAIT" => process_wait(event, addToArray)
+            case "TYPE" => process_type(event, addToArray)
+            case "XADD" => process_xadd(event, addToArray)
+            case "XRANGE" => process_xrange(event, addToArray)
+            case "XREAD" => process_xread(event, addToArray)
+            case "INCR" => process_incr(event, addToArray)
+            case "MULTI" => process_multi(event, addToArray)
+            case "EXEC" => process_exec(event, addToArray)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -245,19 +263,19 @@ class EventProcessor(
         }
     }
 
-    private def process_ping(event: Array[String]): Unit = {
-        writeToOutput(respEncoder.encodeSimpleString("PONG").getBytes(), event(0))
+    private def process_ping(event: Array[String], addToArray: Boolean = false): Unit = {
+        writeToOutput(respEncoder.encodeSimpleString("PONG"), event(0), addToArray)
     }
 
-    private def process_echo(event: Array[String]): Unit = {
+    private def process_echo(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
             throw new Exception("Invalid Inputs, required: ECHO <command>")
         }
 
-        writeToOutput(respEncoder.encodeSimpleString(event(1)).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeSimpleString(event(1)), event(0), addToArray)
     }
 
-    private def process_set(event: Array[String]): Unit = {
+    private def process_set(event: Array[String], addToArray: Boolean = false): Unit = {
         println(s"event: ${event}")
         if (event.length != 3 && event.length != 5) {
             throw new Exception("Invalid Inputs, required: SET <key> <value> (optional) PX <expiry>")
@@ -275,12 +293,12 @@ class EventProcessor(
         val value = event(2)
         cache.put(key, new CacheElement(value, "string", exp, LocalDateTime.now()))
 
-        writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+        writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
         unprocessedWrite.set(true)
         if (config.role == "master")    propogate_command(event)
     }
 
-    private def process_get(event: Array[String]): Unit = {
+    private def process_get(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
             throw new Exception("Invalid Inputs, required: GET <key>")
         }
@@ -296,39 +314,39 @@ class EventProcessor(
                     val duration = Duration.between(value.setAt, LocalDateTime.now()).toMillis.toLong
                     // Check if element is expired
                     if (duration <= exp) {
-                        writeToOutput(respEncoder.encodeSimpleString(value.value).getBytes(), event(0))
+                        writeToOutput(respEncoder.encodeSimpleString(value.value), event(0), addToArray)
                     } else {
                         // Remove if expired
                         cache.remove(key)
-                        writeToOutput(respEncoder.encodeBulkString("").getBytes(), event(0))
+                        writeToOutput(respEncoder.encodeBulkString(""), event(0), addToArray)
                     }
                 }
-                case None => writeToOutput(respEncoder.encodeSimpleString(value.value).getBytes(), event(0))
+                case None => writeToOutput(respEncoder.encodeSimpleString(value.value), event(0), addToArray)
             }
         } else {
-            writeToOutput(respEncoder.encodeBulkString("").getBytes(), event(0))
+            writeToOutput(respEncoder.encodeBulkString(""), event(0), addToArray)
         }
     }
 
-    private def process_config(event: Array[String]): Unit = {
+    private def process_config(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3 || event(1).toUpperCase() != "GET") {
             throw new Exception("Invalid Inputs, required: CONFIG GET <key>")
         }
 
         event(2) match {
-            case "dir" => writeToOutput(respEncoder.encodeArray(Array("dir", config.dir)).getBytes(), event(0))
-            case "dbfilename" => writeToOutput(respEncoder.encodeArray(Array("dbfilename", config.dbFileName)).getBytes(), event(0))
+            case "dir" => writeToOutput(respEncoder.encodeArray(Array("dir", config.dir)), event(0), addToArray)
+            case "dbfilename" => writeToOutput(respEncoder.encodeArray(Array("dbfilename", config.dbFileName)), event(0), addToArray)
             case _ => throw new Exception("Invalid Inputs, required: key = dir/dbfilename")
         }
     }
 
-    private def process_save(event: Array[String]): Unit = {
+    private def process_save(event: Array[String], addToArray: Boolean = false): Unit = {
         // Save current cache state to RDB File
         saveState()
-        writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+        writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
     }
 
-    private def process_keys(event: Array[String]): Unit = {
+    private def process_keys(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
             throw new Exception("Invalid Inputs, required: KEYS <pattern>")
         }
@@ -341,19 +359,19 @@ class EventProcessor(
             // Use proper regex matching syntax
             pattern.findFirstIn(key).isDefined
         }
-        writeToOutput(respEncoder.encodeArray(filteredKeys.toArray).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeArray(filteredKeys.toArray), event(0), addToArray)
     }
 
-    private def process_info(event: Array[String]): Unit = {
+    private def process_info(event: Array[String], addToArray: Boolean = false): Unit = {
         writeToOutput(
             respEncoder.encodeBulkString(
                 s"role:${config.role}\n" +
                 s"master_replid:${config.master_replid}\n" +
                 s"master_repl_offset:${config.master_repl_offset}"
-            ).getBytes(), event(0))
+            ), event(0), addToArray)
     }
 
-    private def process_replconf(event: Array[String]): Unit = {
+    private def process_replconf(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3) {
             throw new Exception("Invalid Inputs, required: REPLCONF <arg1> <arg2>")
         }
@@ -364,17 +382,17 @@ class EventProcessor(
             case "listening-port" => {
                 try {
                     slaveOutputStreams += outputStream.get
-                    writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+                    writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
                 } catch {
                     case e: Exception => {
-                        writeToOutput(respEncoder.encodeSimpleString(e.getMessage()).getBytes(), event(0))
+                        writeToOutput(respEncoder.encodeSimpleString(e.getMessage()), event(0), addToArray)
                     }
                 }
 
                 return
             }
             case "GETACK" => {
-                writeToOutput(respEncoder.encodeArray(Array("REPLCONF", "ACK", totalBytesProcessed.toString)).getBytes(), event(0))
+                writeToOutput(respEncoder.encodeArray(Array("REPLCONF", "ACK", totalBytesProcessed.toString)), event(0), addToArray)
                 return
             }
             case "ACK" => {
@@ -384,27 +402,27 @@ class EventProcessor(
                 return
             }
             case _ => {
-                writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+                writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
             }
         }
     }
 
-    private def process_psync(event: Array[String]): Unit = {
+    private def process_psync(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3) {
             throw new Exception("Invalid Inputs, required: PSYNC ? -1")
         }
 
-        writeToOutput(respEncoder.encodeSimpleString(s"FULLRESYNC ${config.master_replid} ${config.master_repl_offset}").getBytes(), event(0))
+        writeToOutput(respEncoder.encodeSimpleString(s"FULLRESYNC ${config.master_replid} ${config.master_repl_offset}"), event(0), addToArray)
         saveState()
         
         val dir = new File(config.dir)
         val file = new File(dir, config.dbFileName)
         val bytes = Files.readAllBytes(file.toPath)
-        writeToOutput(s"$$${bytes.length}\r\n".getBytes(), event(0))
-        writeToOutput(bytes, event(0))
+        writeRawToOutput(s"$$${bytes.length}\r\n".getBytes(), event(0))
+        writeRawToOutput(bytes, event(0))
     }
 
-    private def process_wait(event: Array[String]): Unit = {
+    private def process_wait(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3) {
             throw new Exception("Invalid Inputs, required: WAIT 0 60000")
         }
@@ -422,23 +440,23 @@ class EventProcessor(
         }
         println("time: ", System.currentTimeMillis())
         println("Time taken: ", (System.currentTimeMillis() - start))
-        writeToOutput(respEncoder.encodeInteger(numReplicasWrite.get()).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeInteger(numReplicasWrite.get()), event(0), addToArray)
     }
 
-    private def process_type(event: Array[String]): Unit = {
+    private def process_type(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
             throw new Exception("Invalid Inputs, required: TYPE <key>")
         }
 
         val key = event(1)
         if (cache.containsKey(key)) {
-            writeToOutput(respEncoder.encodeSimpleString(cache.get(key).valueType).getBytes(), event(0))
+            writeToOutput(respEncoder.encodeSimpleString(cache.get(key).valueType), event(0), addToArray)
         } else {
-            writeToOutput(respEncoder.encodeSimpleString("none").getBytes(), event(0))
+            writeToOutput(respEncoder.encodeSimpleString("none"), event(0), addToArray)
         }
     }
 
-    private def process_xadd(event: Array[String]): Unit = {
+    private def process_xadd(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length < 5 || event.length % 2 == 0) {
             throw new Exception("Invalid Inputs, required: XADD <stream-key> <current-key> key value")
         }
@@ -451,7 +469,7 @@ class EventProcessor(
         }
 
         if (cache.get(streamKey).valueType != "stream") {
-            writeToOutput(respEncoder.encodeSimpleString("-1").getBytes(), event(0))
+            writeToOutput(respEncoder.encodeSimpleString("-1"), event(0), addToArray)
             return
         }
 
@@ -471,10 +489,10 @@ class EventProcessor(
 
         lastXADDTime.set(System.currentTimeMillis())
         lastXADDId.set(currentKey)
-        writeToOutput(respEncoder.encodeBulkString(currentKey).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeBulkString(currentKey), event(0), addToArray)
     }
 
-    private def process_xrange(event: Array[String]): Unit = {
+    private def process_xrange(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 4) {
             throw new Exception("Invalid Inputs, required: XRANGE <key> <start> <end>")
         }
@@ -500,10 +518,10 @@ class EventProcessor(
         }
 
         val resultMap = find_stream_enteries(key, start, end)
-        writeToOutput(respEncoder.encodeArray(resultMap).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeArray(resultMap), event(0), addToArray)
     }
 
-    private def process_xread(event: Array[String]): Unit = {
+    private def process_xread(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length < 4 || event.length % 2 != 0) {
             throw new Exception("Invalid Inputs, required: XREAD streams <stream_key> <id>")
         }
@@ -561,14 +579,14 @@ class EventProcessor(
         }
         
         if (isEmpty) {
-            writeToOutput(respEncoder.encodeBulkString("").getBytes(), event(0))
+            writeToOutput(respEncoder.encodeBulkString(""), event(0), addToArray)
             return
         }
 
-        writeToOutput(respEncoder.encodeArray(resMap.toArray).getBytes(), event(0))
+        writeToOutput(respEncoder.encodeArray(resMap.toArray), event(0), addToArray)
     }
 
-    private def process_incr(event: Array[String]): Unit = {
+    private def process_incr(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
             throw new Exception("Invalid Inputs, required: INCR <key>")
         }
@@ -579,24 +597,24 @@ class EventProcessor(
                 val value = cache.get(key).value.toInt + 1
                 cache.put(key, new CacheElement(value.toString, "string", cache.get(key).expiry, cache.get(key).setAt))
 
-                writeToOutput(respEncoder.encodeInteger(value).getBytes(), event(0))
+                writeToOutput(respEncoder.encodeInteger(value), event(0), addToArray)
             } catch {
                 case _: Throwable => throw new Exception("ERR value is not an integer or out of range")
             }
         } else {
             cache.put(key, new CacheElement("1", "string", None, LocalDateTime.now()))
 
-            writeToOutput(respEncoder.encodeInteger(1).getBytes(), event(0))
+            writeToOutput(respEncoder.encodeInteger(1), event(0), addToArray)
         }
     }
 
-    private def process_multi(event: Array[String]): Unit = {
+    private def process_multi(event: Array[String], addToArray: Boolean = false): Unit = {
         multiEnabled = true
         println(s"mutli: ${Thread.currentThread().getId()}")
-        writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
+        writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
     }
 
-    private def process_exec(event: Array[String]): Unit = {
+    private def process_exec(event: Array[String], addToArray: Boolean = false): Unit = {
         println(s"exec: ${Thread.currentThread().getId()}")
         if (!multiEnabled) {
             throw new Exception("ERR EXEC without MULTI")
@@ -604,14 +622,17 @@ class EventProcessor(
 
         multiEnabled = false
         println(s"event empty; ${eventQueue.isEmpty}")
+        execOutput.clear()
         if (eventQueue.isEmpty) {
-            writeToOutput(respEncoder.encodeArray(Array()).getBytes(), event(0))
+            writeToOutput(respEncoder.encodeArray(Array()), event(0), false)
             return
         }
 
         while (!eventQueue.isEmpty) {
             val event = eventQueue.dequeue()
-            process_event(event)
+            process_event(event, true)
         }
+
+        writeToOutput(respEncoder.encodeArray(execOutput.toArray, true), event(0), addToArray)
     }
 }
