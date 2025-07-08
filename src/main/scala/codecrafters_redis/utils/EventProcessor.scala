@@ -221,7 +221,7 @@ class EventProcessor(
             throw new Exception("Empty event")
         }
 
-        if (event(0) != "EXEC" && multiEnabled) {
+        if (event(0) != "EXEC" && event(0) != "DISCARD" && multiEnabled) {
             eventQueue += event
             writeToOutput(respEncoder.encodeSimpleString("QUEUED"), "")
             return
