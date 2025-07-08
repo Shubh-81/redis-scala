@@ -1,34 +1,83 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/412240a0-7f86-4a16-8d81-2708d09cfe99)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# Redis Clone (Scala)
 
-This is a starting point for Scala solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+This project is a Redis server implementation written in Scala, as part of the [Codecrafters](https://codecrafters.io/) Redis challenge. It aims to mimic the core features of Redis, including key-value storage, streams, replication, and RDB persistence.
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+## Features
+- Basic Redis commands: `PING`, `ECHO`, `SET`, `GET`, `INCR`, `KEYS`, `TYPE`, `CONFIG`, `SAVE`, etc.
+- Stream support: `XADD`, `XRANGE`, `XREAD`
+- Replication: Master-slave support with `REPLCONF`, `PSYNC`, `WAIT`
+- RDB persistence: Save and load state to/from disk
+- RESP protocol support (serialization/deserialization)
+- Multi/Exec transaction support
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
-
-# Passing the first stage
-
-The entry point for your Redis implementation is in
-`src/main/scala/codecrafters_redis/Server.scala`. Study and uncomment the
-relevant code, and push your changes to pass the first stage:
-
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
+## Project Structure
+```
+/src
+  /main/scala/codecrafters_redis
+    Server.scala           # Main server logic
+    /utils
+      EventProcessor.scala # Command processing and event handling
+      RESPEncoder.scala    # RESP protocol encoding
+      RESPDecoder.scala    # RESP protocol decoding
+      RDBParserEncoder.scala # RDB file encoding/decoding
+  /test                   # (Optional) Test files
 ```
 
-That's all!
+## Getting Started
 
-# Stage 2 & beyond
+### Prerequisites
+- Scala (2.13 or compatible)
+- sbt (Scala Build Tool)
 
-Note: This section is for stages 2 and beyond.
+### Setup
+1. Clone the repository:
+   ```sh
+   git clone <your-repo-url>
+   cd codecrafters-redis-scala
+   ```
+2. Build the project:
+   ```sh
+   sbt compile
+   ```
 
-1. Ensure you have `sbt (1.9.9)` installed locally
-1. Run `./your_program.sh` to run your Redis server, which is implemented in
-   `src/main/scala/codecrafters_redis/Server.scala`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+### Running the Server
+You can run the server using sbt:
+```sh
+./your_program.sh --port 6379
+```
+By default, the server listens on `localhost:6379`.
+
+#### Custom Configuration
+You can specify custom configuration via command-line arguments:
+- `--dir <dir>`: Directory for RDB file
+- `--dbfilename <filename>`: RDB file name
+- `--port <port>`: Port to listen on
+- `--host <host>`: Host to bind
+- `--replicaof <host> <port>`: Start as a replica of another Redis server
+
+Example:
+```sh
+./your_program "run --dir ./data --dbfilename dump.rdb --port 6380"
+```
+
+## Usage
+You can use the standard `redis-cli` to connect and interact with your server:
+```sh
+redis-cli -port 6379
+```
+Example commands:
+```
+SET foo bar
+GET foo
+INCR counter
+XADD mystream * key1 value1
+XRANGE mystream - +
+SAVE
+```
+
+
+## Notes
+- This project is for educational purposes and does not implement all Redis features or optimizations.
+- Error handling and edge cases are handled to mimic Redis behavior as closely as possible.
+- Persistence is via a simple RDB file format.
+
