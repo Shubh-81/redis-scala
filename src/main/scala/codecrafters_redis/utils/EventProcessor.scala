@@ -635,4 +635,11 @@ class EventProcessor(
 
         writeToOutput(respEncoder.encodeArray(execOutput.toArray, true), event(0), addToArray)
     }
+
+    private def process_discard(event: Array[String], addToArray: Boolean = false): Unit = {
+        if (!multiEnabled)  throw new Exception("ERR DISCARD without MULTI")
+
+        eventQueue.clear()
+        writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
+    }
 }
