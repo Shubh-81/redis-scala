@@ -358,7 +358,7 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: REPLCONF <arg1> <arg2>")
         }
 
-        
+
 
         event(1) match {
             case "listening-port" => {
@@ -519,11 +519,9 @@ class EventProcessor(
             
             if (timeOut == 0) {
                 var len = 0
-                while (start > lastXADDTime.get()) {
-                    println(s"lastXADDTime: ${lastXADDTime.get()}")
+                while (start > lastXADDTime.get() && (start - lastXADDTime.get()) < 10000) {
                     Thread.sleep(10)
                 }
-                println(s"streamCache: ${streamCache}")
             } else {
                 while ((System.currentTimeMillis() - start) < timeOut) {
                     Thread.sleep(5)
