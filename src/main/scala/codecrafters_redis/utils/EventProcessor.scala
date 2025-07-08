@@ -270,7 +270,8 @@ class EventProcessor(
 
     private def process_echo(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
-            throw new Exception("Invalid Inputs, required: ECHO <command>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: ECHO <command>"), event(0), addToArray)
+            return
         }
 
         writeToOutput(respEncoder.encodeSimpleString(event(1)), event(0), addToArray)
@@ -279,13 +280,15 @@ class EventProcessor(
     private def process_set(event: Array[String], addToArray: Boolean = false): Unit = {
         println(s"event: ${event}")
         if (event.length != 3 && event.length != 5) {
-            throw new Exception("Invalid Inputs, required: SET <key> <value> (optional) PX <expiry>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: SET <key> <value> (optional) PX <expiry>"), event(0), addToArray)
+            return
         }
 
         var exp: Option[Long] = None
         // Check if expiry is provided
         if (event.length == 5 && event(3).toUpperCase() != "PX") {
-            throw new Exception("Invalid Inputs, required: SET <key> <value> (optional) PX <expiry>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: SET <key> <value> (optional) PX <expiry>"), event(0), addToArray)
+            return
         } else if (event.length == 5) {
             exp = Some(event(4).toLong)
         }
@@ -301,7 +304,8 @@ class EventProcessor(
 
     private def process_get(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
-            throw new Exception("Invalid Inputs, required: GET <key>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: GET <key>"), event(0), addToArray)
+            return
         }
 
         val key = event(1)
@@ -331,13 +335,14 @@ class EventProcessor(
 
     private def process_config(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3 || event(1).toUpperCase() != "GET") {
-            throw new Exception("Invalid Inputs, required: CONFIG GET <key>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: CONFIG GET <key>"), event(0), addToArray)
+            return
         }
 
         event(2) match {
             case "dir" => writeToOutput(respEncoder.encodeArray(Array("dir", config.dir)), event(0), addToArray)
             case "dbfilename" => writeToOutput(respEncoder.encodeArray(Array("dbfilename", config.dbFileName)), event(0), addToArray)
-            case _ => throw new Exception("Invalid Inputs, required: key = dir/dbfilename")
+            case _ => writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: key = dir/dbfilename"), event(0), addToArray)
         }
     }
 
@@ -349,7 +354,8 @@ class EventProcessor(
 
     private def process_keys(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
-            throw new Exception("Invalid Inputs, required: KEYS <pattern>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: KEYS <pattern>"), event(0), addToArray)
+            return
         }
 
         // Convert glob input into valid regex string, then convert string to regex
@@ -374,7 +380,8 @@ class EventProcessor(
 
     private def process_replconf(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3) {
-            throw new Exception("Invalid Inputs, required: REPLCONF <arg1> <arg2>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: REPLCONF <arg1> <arg2>"), event(0), addToArray)
+            return
         }
 
 
@@ -410,7 +417,8 @@ class EventProcessor(
 
     private def process_psync(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3) {
-            throw new Exception("Invalid Inputs, required: PSYNC ? -1")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: PSYNC ? -1"), event(0), addToArray)
+            return
         }
 
         writeToOutput(respEncoder.encodeSimpleString(s"FULLRESYNC ${config.master_replid} ${config.master_repl_offset}"), event(0), addToArray)
@@ -425,7 +433,8 @@ class EventProcessor(
 
     private def process_wait(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 3) {
-            throw new Exception("Invalid Inputs, required: WAIT 0 60000")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: WAIT 0 60000"), event(0), addToArray)
+            return
         }
 
         val requiredReplicas = event(1).toInt
@@ -446,7 +455,8 @@ class EventProcessor(
 
     private def process_type(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
-            throw new Exception("Invalid Inputs, required: TYPE <key>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: TYPE <key>"), event(0), addToArray)
+            return
         }
 
         val key = event(1)
@@ -459,7 +469,8 @@ class EventProcessor(
 
     private def process_xadd(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length < 5 || event.length % 2 == 0) {
-            throw new Exception("Invalid Inputs, required: XADD <stream-key> <current-key> key value")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: XADD <stream-key> <current-key> key value"), event(0), addToArray)
+            return
         }
 
         val streamKey = event(1)
@@ -495,7 +506,8 @@ class EventProcessor(
 
     private def process_xrange(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 4) {
-            throw new Exception("Invalid Inputs, required: XRANGE <key> <start> <end>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: XRANGE <key> <start> <end>"), event(0), addToArray)
+            return
         }
 
         val key = event(1)
@@ -524,7 +536,8 @@ class EventProcessor(
 
     private def process_xread(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length < 4 || event.length % 2 != 0) {
-            throw new Exception("Invalid Inputs, required: XREAD streams <stream_key> <id>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: XREAD streams <stream_key> <id>"), event(0), addToArray)
+            return
         }
 
         var idx = 2
@@ -589,7 +602,8 @@ class EventProcessor(
 
     private def process_incr(event: Array[String], addToArray: Boolean = false): Unit = {
         if (event.length != 2) {
-            throw new Exception("Invalid Inputs, required: INCR <key>")
+            writeToOutput(respEncoder.encodeSimpleError("Invalid Inputs, required: INCR <key>"), event(0), addToArray)
+            return
         }
 
         val key = event(1)
@@ -600,7 +614,7 @@ class EventProcessor(
 
                 writeToOutput(respEncoder.encodeInteger(value), event(0), addToArray)
             } catch {
-                case _: Throwable => throw new Exception("ERR value is not an integer or out of range")
+                case _: Throwable => writeToOutput(respEncoder.encodeSimpleError("ERR value is not an integer or out of range"), event(0), addToArray)
             }
         } else {
             cache.put(key, new CacheElement("1", "string", None, LocalDateTime.now()))
@@ -618,7 +632,8 @@ class EventProcessor(
     private def process_exec(event: Array[String], addToArray: Boolean = false): Unit = {
         println(s"exec: ${Thread.currentThread().getId()}")
         if (!multiEnabled) {
-            throw new Exception("ERR EXEC without MULTI")
+            writeToOutput(respEncoder.encodeSimpleError("ERR EXEC without MULTI"), event(0), addToArray)
+            return
         }
 
         multiEnabled = false
@@ -638,8 +653,10 @@ class EventProcessor(
     }
 
     private def process_discard(event: Array[String], addToArray: Boolean = false): Unit = {
-        if (!multiEnabled)  throw new Exception("ERR DISCARD without MULTI")
-
+        if (!multiEnabled) {
+            writeToOutput(respEncoder.encodeSimpleError("ERR DISCARD without MULTI"), event(0), addToArray)
+            return
+        }
         eventQueue.clear()
         multiEnabled = false
         writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
