@@ -48,7 +48,6 @@ object Server {
     final var unprocessedWrite = new AtomicBoolean(false)
     final var lastXADDTime = new AtomicLong(0)
     final var lastXADDId = new AtomicReference[String]("0-0")
-    final var multiEnabled = new AtomicBoolean(false)
 
     private def startScheduledSaveState(): Unit = {
         scheduler.scheduleAtFixedRate(
@@ -272,7 +271,7 @@ object Server {
 
             loadFromBytes(fileBytes.toArray)
 
-            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite, lastXADDTime, lastXADDId, multiEnabled)
+            val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = false, numReplicasWrite, unprocessedWrite, lastXADDTime, lastXADDId)
             var command: ArrayBuffer[String] = ArrayBuffer[String]()
             var idx = 0
             var len = 0
@@ -361,11 +360,11 @@ object Server {
         // Buffer to store threads
         var threads = ListBuffer[Thread]()
         
-        val workerThread = new Thread(() => {
-            eventLoop(q)
-        })
-        workerThread.setDaemon(true)
-        workerThread.start()
+        // val workerThread = new Thread(() => {
+        //     eventLoop(q)
+        // })
+        // workerThread.setDaemon(true)
+        // workerThread.start()
 
         if (config.role == "slave") {
             var slaveThread = new Thread(() => {
@@ -381,7 +380,8 @@ object Server {
             val thread = new Thread(() => {
                 try {
                     Using.resources(clientSocket.getOutputStream(), new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) { (os, reader) =>
-                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite, lastXADDTime, lastXADDId, multiEnabled)
+                        println(s"address: ${clientSocket.getRemoteSocketAddress()}")
+                        val eventProcessor = new EventProcessor(Some(os), cache, streamCache, config, slaveOutputStreams, writeToOutput = true, numReplicasWrite, unprocessedWrite, lastXADDTime, lastXADDId)
                         var command: ArrayBuffer[String] = ArrayBuffer[String]()
                         var idx = 0
                         var len = 0
@@ -430,7 +430,6 @@ object Server {
             threads += thread
         }
 
-        workerThread.join()
         for (thread <- threads) thread.join()
     }
 

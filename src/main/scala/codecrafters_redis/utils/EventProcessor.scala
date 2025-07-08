@@ -34,13 +34,13 @@ class EventProcessor(
     val unprocessedWrite: AtomicBoolean,
     val lastXADDTime: AtomicLong,
     val lastXADDId: AtomicReference[String],
-    val multiEnabled: AtomicBoolean
 ) {
 
     final val respEncoder = new RESPEncoder()
     final val compulsoryWrite = Set[String]("REPLCONF")
     final var totalBytesProcessed: Long = 0
     final var eventQueue: mutable.Queue[Array[String]] = mutable.Queue()
+    final var multiEnabled: Boolean = false
 
     def start_processing(): Unit = {
 
@@ -203,7 +203,7 @@ class EventProcessor(
             throw new Exception("Empty event")
         }
 
-        if (event(0) != "EXEC" && multiEnabled.get()) {
+        if (event(0) != "EXEC" && multiEnabled) {
             eventQueue += event
             writeToOutput(respEncoder.encodeSimpleString("QUEUED").getBytes(), "")
             return
@@ -591,18 +591,18 @@ class EventProcessor(
     }
 
     private def process_multi(event: Array[String]): Unit = {
-        multiEnabled.set(true)
+        multiEnabled = true
         println(s"mutli: ${Thread.currentThread().getId()}")
         writeToOutput(respEncoder.encodeSimpleString("OK").getBytes(), event(0))
     }
 
     private def process_exec(event: Array[String]): Unit = {
         println(s"exec: ${Thread.currentThread().getId()}")
-        if (!multiEnabled.get()) {
+        if (!multiEnabled) {
             throw new Exception("ERR EXEC without MULTI")
         }
 
-        multiEnabled.set(false)
+        multiEnabled = false
         println(s"event empty; ${eventQueue.isEmpty}")
         if (eventQueue.isEmpty) {
             writeToOutput(respEncoder.encodeArray(Array()).getBytes(), event(0))
