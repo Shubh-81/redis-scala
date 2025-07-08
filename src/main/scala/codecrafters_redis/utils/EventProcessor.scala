@@ -551,7 +551,7 @@ class EventProcessor(
             
             if (timeOut == 0) {
                 var len = 0
-                while (start > lastXADDTime.get() && (start - lastXADDTime.get()) < 10000) {
+                while (start > lastXADDTime.get() && (start - lastXADDTime.get()) <= 1000) {
                     Thread.sleep(10)
                 }
             } else {
