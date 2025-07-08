@@ -247,6 +247,7 @@ class EventProcessor(
             case "INCR" => process_incr(event, addToArray)
             case "MULTI" => process_multi(event, addToArray)
             case "EXEC" => process_exec(event, addToArray)
+            case "DISCARD" => process_discard(event, addToArray)
             case _ => throw new Exception("Unsupported command")
         }
 
@@ -640,6 +641,7 @@ class EventProcessor(
         if (!multiEnabled)  throw new Exception("ERR DISCARD without MULTI")
 
         eventQueue.clear()
+        multiEnabled = false
         writeToOutput(respEncoder.encodeSimpleString("OK"), event(0), addToArray)
     }
 }
