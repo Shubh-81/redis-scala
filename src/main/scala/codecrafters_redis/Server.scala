@@ -294,7 +294,7 @@ object Server {
 
                             if (idx == 2 * len) {
                                 println(s"command: ${command}")
-                                q.offer(new Event(eventProcessor, command))
+                                eventProcessor.process_event(command.toArray)
                             }
                         }
                     }

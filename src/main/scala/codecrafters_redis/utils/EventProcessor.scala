@@ -358,6 +358,8 @@ class EventProcessor(
             throw new Exception("Invalid Inputs, required: REPLCONF <arg1> <arg2>")
         }
 
+        
+
         event(1) match {
             case "listening-port" => {
                 try {
